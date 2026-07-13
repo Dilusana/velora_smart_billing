@@ -1,0 +1,36 @@
+name: retailnova
+description: RetailNova self-checkout kiosk welcome screen (Flutter, Material 3).
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  sqflite: ^2.2.8+1
+  path_provider: ^2.0.15
+  path: ^1.8.3
+  firebase_core: ^4.11.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  # Add your real category images here and reference them by the same
+  # names used in lib/models/category.dart ("123", "456", "789", "111",
+  # "222", "333") once available — until then the CategoryCard widget
+  # falls back to a matching icon automatically.
+  assets:
+    - assets/
+  #   - assets/images/123.png
+  #   - assets/images/456.png
+  #   - assets/images/789.png
+  #   - assets/images/111.png
+  #   - assets/images/222.png
+  #   - assets/images/333.png
