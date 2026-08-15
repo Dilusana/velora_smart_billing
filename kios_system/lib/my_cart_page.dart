@@ -42,18 +42,6 @@ class _MyCartPageState extends State<MyCartPage> {
     });
   }
 
-  Future<void> _removeItem(int id) async {
-    await CartDatabase.instance.deleteItem(id);
-    _refreshCart();
-  }
-
-  Future<void> _updateQuantity(CartItem item, int quantity) async {
-    final clamped = quantity.clamp(1, 99);
-    final updated = item.copyWith(quantity: clamped);
-    await CartDatabase.instance.updateItem(updated);
-    _refreshCart();
-  }
-
   void _applyPromo() {
     final code = _promoController.text.trim().toUpperCase();
     if (code == 'SAVE5' || code == 'KIOSK5') {
@@ -140,15 +128,6 @@ class _MyCartPageState extends State<MyCartPage> {
     return subtotal * 0.08 + _promoDiscount();
   }
 
-  double _deliveryFee() {
-    return 0.0;
-  }
-
-  double _total(double subtotal) {
-    final total = subtotal - _discount(subtotal) + _deliveryFee();
-    return total.clamp(0.0, double.infinity);
-  }
-
   String _formattedPrice(double value) {
     return 'Rs.${value.toStringAsFixed(0)}';
   }
@@ -178,39 +157,6 @@ class _MyCartPageState extends State<MyCartPage> {
     }
   }
 
-  Widget _buildQuantityControl(CartItem item) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F7FA),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: () => _updateQuantity(item, item.quantity - 1),
-            icon: const Icon(Icons.remove_rounded, size: 18),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Text(
-              item.quantity.toString(),
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-            ),
-          ),
-          IconButton(
-            onPressed: () => _updateQuantity(item, item.quantity + 1),
-            icon: const Icon(Icons.add_rounded, size: 18),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildHeader(int productCount) {
     return Row(
       children: [
@@ -227,10 +173,10 @@ class _MyCartPageState extends State<MyCartPage> {
           ),
         ),
         const SizedBox(width: 16),
-        Expanded(
+        const Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
+            children: [
               Text('CHECKOUT', style: TextStyle(fontSize: 12, letterSpacing: 1.5, color: Color(0xFF9AA1AA))),
               SizedBox(height: 6),
               Text('Your Order', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.primaryText)),
@@ -275,108 +221,6 @@ class _MyCartPageState extends State<MyCartPage> {
     );
   }
 
-  Widget _buildProductCard(CartItem item) {
-    return Dismissible(
-      key: ValueKey(item.id ?? item.title),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        margin: const EdgeInsets.symmetric(vertical: 8),
-        padding: const EdgeInsets.only(right: 24),
-        decoration: BoxDecoration(
-          color: Colors.red.shade400,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        alignment: Alignment.centerRight,
-        child: const Icon(Icons.delete_outline, color: Colors.white, size: 28),
-      ),
-      onDismissed: (_) {
-        if (item.id != null) {
-          _removeItem(item.id!);
-        }
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: const [
-            BoxShadow(color: Color.fromRGBO(0, 0, 0, 0.08), blurRadius: 24, offset: Offset(0, 12)),
-          ],
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 74,
-              height: 74,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFEFF7F4), Color(0xFFD9F0E5)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Icon(_iconForTitle(item.title), color: AppColors.brand, size: 36),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 4),
-                  Text(
-                    _productSubtitle(item.title),
-                    style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Text(
-                        _formattedPrice(_priceForTitle(item.title)),
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.brand),
-                      ),
-                      const Spacer(),
-                      _buildQuantityControl(item),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _productSubtitle(String title) {
-    switch (title) {
-      case 'Bananas':
-      case 'Fresh Spinach':
-      case 'Red Apples':
-      case 'Vegetable Mix':
-        return 'Fresh produce';
-      case 'Whole Wheat Bread':
-        return 'Bakery';
-      case 'Rice 5kg':
-      case 'Frozen Pizza':
-        return 'Grains';
-      case 'Orange Juice':
-      case 'Sparkling Water':
-      case 'Cold Brew Coffee':
-      case 'Herbal Tea':
-        return 'Beverages';
-      case 'Greek Yogurt':
-      case 'Fresh Cream':
-        return 'Dairy';
-      default:
-        return 'Grocery item';
-    }
-  }
-
   Widget _buildDeliveryOption({
     required IconData icon,
     required String title,
@@ -396,7 +240,7 @@ class _MyCartPageState extends State<MyCartPage> {
             boxShadow: selected
                 ? [
                     BoxShadow(
-                      color: AppColors.accent.withOpacity(0.12),
+                      color: AppColors.accent.withValues(alpha: 0.12),
                       blurRadius: 18,
                       offset: const Offset(0, 12),
                     ),
@@ -409,7 +253,7 @@ class _MyCartPageState extends State<MyCartPage> {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: selected ? AppColors.accent.withOpacity(0.12) : const Color(0xFFF5F7FA),
+                  color: selected ? AppColors.accent.withValues(alpha: 0.12) : const Color(0xFFF5F7FA),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(icon, color: selected ? AppColors.accent : AppColors.brand, size: 24),
@@ -745,47 +589,6 @@ class _MyCartPageState extends State<MyCartPage> {
             },
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildItemsSection(List<CartItem> items) {
-    if (items.isEmpty) {
-      return const Center(
-        child: Text(
-          'Your cart is empty.',
-          style: TextStyle(fontSize: 18, color: Color(0xFF5A5F6B)),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(32),
-        boxShadow: const [
-          BoxShadow(color: Color.fromRGBO(0, 0, 0, 0.08), blurRadius: 28, offset: Offset(0, 16)),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Text('Items', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-              const Spacer(),
-              Text('${items.length} products', style: TextStyle(color: Colors.grey.shade500)),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Expanded(
-            child: ListView.builder(
-              itemCount: items.length,
-              itemBuilder: (context, index) => _buildProductCard(items[index]),
-            ),
-          ),
-        ],
       ),
     );
   }
