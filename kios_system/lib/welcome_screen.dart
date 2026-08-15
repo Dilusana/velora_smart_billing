@@ -5,9 +5,9 @@ import 'category_card.dart';
 import 'language_button.dart';
 import 'cart_button.dart';
 import 'cart_database.dart';
-import 'kiosk_background.dart';
 import 'my_cart_page.dart';
 import 'all_deals_page.dart';
+import 'app_theme.dart';
 
 /// The main self-checkout kiosk welcome screen.
 ///
@@ -77,45 +77,32 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     final double width = mediaQuery.size.width;
 
     return Scaffold(
-      backgroundColor: const Color.fromARGB(255, 255, 255, 255),
+      backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Stack(
+        child: Column(
           children: [
-            // Background pattern + waves.
-            Positioned.fill(
-              child: CustomPaint(
-                painter: const KioskBackgroundPainter(),
-              ),
-            ),
-            Column(
-              children: [
-                _buildHeader(width),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: width * 0.04,
-                      vertical: 12,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-
-                        const SizedBox(height: 22),
-                        // All Deals banner removed as per request
-                        const SizedBox(height: 20),
-                        _buildCategoryGrid(width),
-                        const SizedBox(height: 26),
-                        CartButton(
-                          itemCount: _cartItemCount,
-                          onTap: _onCartTap,
-                          width: width.clamp(0.0, 1400.0) * 0.34,
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-                    ),
-                  ),
+            _buildHeader(width),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.symmetric(
+                  horizontal: width * 0.04,
+                  vertical: 12,
                 ),
-              ],
+                child: Column(  
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const SizedBox(height: 22),
+                    _buildCategoryGrid(width),
+                    const SizedBox(height: 26),
+                    CartButton(
+                      itemCount: _cartItemCount,
+                      onTap: _onCartTap,
+                      width: width.clamp(0.0, 1400.0) * 0.34,
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -144,22 +131,21 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                         style: TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.w800,
-                          color: Color(0xFF1B1B1B),
+                          color: AppColors.primaryText,
                           letterSpacing: 0.2,
                         ),
                       ),
-
                     ],
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
+                const Text(
                   'What are you shopping today?',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 3,
-                    color: Colors.grey.shade500,
+                    color: AppColors.secondaryText,
                   ),
                 ),
               ],
@@ -184,88 +170,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   // CATEGORY GRID — responsive 2 rows x 3 columns on tablets, collapsing
   // to 2 columns on narrower / portrait-ish widths.
   // ---------------------------------------------------------------------
-  Widget _buildAllDealsBanner(double width) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const AllDealsPage()))
-            .then((_) => _loadCartCount());
-      },
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF1B8A3D), Color(0xFF0FA861)],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF1B8A3D).withOpacity(0.28),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(Icons.local_offer_rounded,
-                  color: Colors.white, size: 28),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text(
-                    'All Deals',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'Up to 33% off — limited time offers!',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Text(
-                'View All',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF1B8A3D),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildCategoryGrid(double width) {
     final int crossAxisCount = width > 900 ? 3 : 2;
     final double aspectRatio = width > 900 ? 1.55 : 1.35;

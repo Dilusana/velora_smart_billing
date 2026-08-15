@@ -1,0 +1,75 @@
+name: admin_dashboard
+description: "Velora - RetailNova Enterprise Admin Dashboard"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+  flutter: '>=3.22.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # Routing
+  go_router: ^14.8.1
+
+  # State Management
+  flutter_riverpod: ^2.6.1
+
+  # Charts
+  fl_chart: ^0.70.2
+
+  # Data Tables
+  data_table_2: ^2.5.12
+
+  # Dark Mode Persistence
+  shared_preferences: ^2.3.5
+  adaptive_theme: ^3.7.0
+
+  # PDF Generation
+  pdf: ^3.11.2
+  printing: ^5.14.1
+
+  # CSV / Export
+  csv: ^6.0.0
+  file_saver: ^0.2.14
+
+  # Toast Notifications
+  toastification: ^2.3.0
+
+  # Icons
+  font_awesome_flutter: ^10.8.0
+
+  # Forms
+  flutter_form_builder: ^10.0.1
+  form_builder_validators: ^11.1.2
+
+  # Google Fonts
+  google_fonts: ^6.2.1
+
+  # Utilities
+  intl: any
+  uuid: ^4.5.1
+  equatable: ^2.0.7
+  firebase_core: ^3.15.1
+  cloud_firestore: ^5.6.12
+  firebase_auth: ^5.7.0
+  firebase_storage: ^12.4.10
+  http: ^1.2.1
+  file_picker: ^11.0.3
+  image_picker: ^1.1.2
+  image: ^4.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+

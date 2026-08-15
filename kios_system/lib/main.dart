@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'welcome_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
+import 'app_theme.dart';
 
 void main() async {
   // Ensure that plugin services are initialized before running the app
@@ -28,21 +29,23 @@ class RetailNovaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = ColorScheme.fromSeed(
-      seedColor: const Color.fromRGBO(27, 138, 61, 1),
+      seedColor: AppColors.brand,
       brightness: Brightness.light,
     );
 
     return MaterialApp(
-      title: 'RetailNova Self Checkout',
+      title: 'Velora Self Checkout',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: scheme,
-        scaffoldBackgroundColor: Colors.white,
+        scaffoldBackgroundColor: AppColors.background,
+        primaryColor: AppColors.brand,
+        appBarTheme: const AppBarTheme(backgroundColor: AppColors.brand),
         fontFamily: 'Roboto',
         textTheme: const TextTheme().apply(
-          bodyColor: const Color(0xFF1B1B1B),
-          displayColor: const Color(0xFF1B1B1B),
+          bodyColor: AppColors.primaryText,
+          displayColor: AppColors.primaryText,
         ),
       ),
       home: const WelcomeScreen(),

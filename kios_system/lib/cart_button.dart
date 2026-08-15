@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'app_theme.dart';
 
 /// Large bottom call-to-action button showing the cart with an item badge.
 ///
@@ -43,13 +44,13 @@ class _CartButtonState extends State<CartButton> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(25),
             gradient: const LinearGradient(
-              colors: [Color(0xFF34C759), Color(0xFF1B8A3D)],
+              colors: [AppColors.accent, AppColors.brand],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF1B8A3D).withValues(alpha: 0.45),
+                color: AppColors.brand.withValues(alpha: 0.45),
                 blurRadius: 24,
                 offset: const Offset(0, 12),
               ),
@@ -90,7 +91,7 @@ class _CartButtonState extends State<CartButton> {
                   child: Text(
                     '${widget.itemCount} Items',
                     style: const TextStyle(
-                      color: Color(0xFF1B8A3D),
+                      color: AppColors.brand,
                       fontWeight: FontWeight.w700,
                       fontSize: 14,
                     ),
