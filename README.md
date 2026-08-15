@@ -1,4 +1,4 @@
-# RetailNova — Self Checkout Kiosk Welcome Screen
+# Velora— Self Checkout Kiosk Welcome Screen
 
 A Flutter Material 3 welcome screen for a tablet-based supermarket
 self-checkout kiosk, optimized for 10"–12" landscape tablets.
