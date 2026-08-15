@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
+import 'app_theme.dart';
 
-import 'all_deals_page.dart';
 import 'cart_database.dart';
 import 'cart_item.dart';
 import 'my_cart_page.dart';
+import 'product_model.dart';
 
-/// Full-screen product detail page reached by tapping a deal card.
+/// Full-screen product detail page reached by tapping a product card.
 class DealProductDetailPage extends StatefulWidget {
-  final DealProduct product;
+  final ProductModel product;
 
   const DealProductDetailPage({super.key, required this.product});
 
@@ -20,9 +21,9 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
   int _cartCount = 0;
   bool _adding = false;
 
-  static const Color _green = Color(0xFF1B8A3D);
-  static const Color _orange = Color(0xFFEF6C00);
-  static const Color _bg = Color(0xFFF5F6F8);
+  static const Color _green = AppColors.brand;
+  static const Color _orange = AppColors.cta;
+  static const Color _bg = AppColors.background;
 
   @override
   void initState() {
@@ -39,9 +40,11 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
   Future<void> _addToCart() async {
     setState(() => _adding = true);
     final item = CartItem(
-      category: 'Deals',
-      title: widget.product.title,
+      productId: widget.product.id,
+      category: widget.product.category.isNotEmpty ? widget.product.category : 'General',
+      title: widget.product.name,
       description: widget.product.description,
+      price: widget.product.price,
       quantity: _quantity,
     );
     await CartDatabase.instance.addOrIncrementItem(item);
@@ -50,7 +53,7 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
     setState(() => _adding = false);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('${widget.product.title} × $_quantity added to cart'),
+        content: Text('${widget.product.name} × $_quantity added to cart'),
         behavior: SnackBarBehavior.floating,
         backgroundColor: _green,
         duration: const Duration(milliseconds: 1400),
@@ -58,7 +61,6 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final p = widget.product;
@@ -86,7 +88,6 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
     );
   }
 
-  // ── Top green header ──────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Container(
       color: _green,
@@ -117,7 +118,6 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
               ),
             ),
           ),
-          // Cart icon
           GestureDetector(
             onTap: () => Navigator.of(context)
                 .push(MaterialPageRoute(builder: (_) => const MyCartPage()))
@@ -164,8 +164,10 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
     );
   }
 
-  // ── Hero image section ────────────────────────────────────────────────────
-  Widget _buildImageHero(DealProduct p) {
+  Widget _buildImageHero(ProductModel p) {
+    final bool hasWebImage = p.isWebImage;
+    final bool hasAssetImage = p.isAssetImage;
+
     return Container(
       width: double.infinity,
       color: _green,
@@ -181,35 +183,67 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
         child: Column(
           children: [
             const SizedBox(height: 28),
-            // Image box
             Container(
               width: 180,
               height: 180,
               decoration: BoxDecoration(
-                color: p.imageColor.withValues(alpha: 0.13),
+                color: _green.withValues(alpha: 0.13),
                 borderRadius: BorderRadius.circular(28),
                 boxShadow: [
                   BoxShadow(
-                    color: p.imageColor.withValues(alpha: 0.18),
+                    color: _green.withValues(alpha: 0.18),
                     blurRadius: 30,
                     offset: const Offset(0, 10),
                   ),
                 ],
               ),
-              child: Icon(p.imageIcon, size: 90, color: p.imageColor),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: hasWebImage
+                    ? Image.network(
+                        p.imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(Icons.shopping_bag_rounded, size: 90, color: _green),
+                      )
+                    : hasAssetImage
+                        ? Image.asset(
+                            p.imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.shopping_bag_rounded, size: 90, color: _green),
+                          )
+                        : const Icon(Icons.shopping_bag_rounded, size: 90, color: _green),
+              ),
             ),
             const SizedBox(height: 20),
-            // Badges row
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (p.isSpecialPrice) ...[
-                    _SpecialBadge(),
-                    const SizedBox(width: 10),
-                  ],
-                  _ExpiryChip(daysLeft: p.daysLeft),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: p.stock > 0 ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: p.stock > 0 ? _green : Colors.red),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(p.stock > 0 ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                            size: 13, color: p.stock > 0 ? _green : Colors.red),
+                        const SizedBox(width: 5),
+                        Text(
+                          p.stock > 0 ? 'Stock: ${p.stock}' : 'Out of Stock',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: p.stock > 0 ? _green : Colors.red,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -220,16 +254,16 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
     );
   }
 
-  // ── Main body content ─────────────────────────────────────────────────────
-  Widget _buildBody(DealProduct p, double subtotal) {
+  Widget _buildBody(ProductModel p, double subtotal) {
+    final unitText = p.unit.isNotEmpty ? 'Per ${p.unit}' : 'Unit Price';
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Product title
           Text(
-            p.title,
+            p.name,
             style: const TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w900,
@@ -237,15 +271,11 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
             ),
           ),
           const SizedBox(height: 6),
-
-          // Unit label
           Text(
-            p.unitLabel,
+            unitText,
             style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
           ),
           const SizedBox(height: 14),
-
-          // Price card
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -264,7 +294,7 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Deal Price',
+                    const Text('Price',
                         style: TextStyle(
                             fontSize: 12, color: Color(0xFF9E9E9E))),
                     const SizedBox(height: 4),
@@ -278,38 +308,19 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
                     ),
                   ],
                 ),
-                const SizedBox(width: 20),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Original',
-                        style: TextStyle(
-                            fontSize: 12, color: Color(0xFF9E9E9E))),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Rs.${p.originalPrice.toStringAsFixed(0)}',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey.shade500,
-                        decoration: TextDecoration.lineThrough,
-                      ),
-                    ),
-                  ],
-                ),
                 const Spacer(),
-                // Discount pill
                 Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
-                    color: _orange,
+                    color: p.stock > 10 ? const Color(0xFFE9F7ED) : const Color(0xFFFFF4E5),
                     borderRadius: BorderRadius.circular(24),
                   ),
                   child: Text(
-                    '-${p.discountPct}%',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
+                    p.stock > 10 ? 'In Stock' : 'Low Stock',
+                    style: TextStyle(
+                      color: p.stock > 10 ? _green : _orange,
+                      fontSize: 14,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
@@ -317,34 +328,7 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
-
-          // Savings banner
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F5E9),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFA5D6A7)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.savings_rounded, color: _green, size: 20),
-                const SizedBox(width: 10),
-                Text(
-                  'You save Rs.${(p.originalPrice - p.price).toStringAsFixed(0)} on this deal!',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: _green,
-                  ),
-                ),
-              ],
-            ),
-          ),
           const SizedBox(height: 24),
-
-          // Quantity selector
           const Text(
             'Quantity',
             style: TextStyle(
@@ -353,7 +337,6 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
           const SizedBox(height: 10),
           Row(
             children: [
-              // Stepper
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -371,7 +354,7 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
                     _StepBtn(
                       icon: Icons.remove_rounded,
                       onTap: () => setState(
-                          () => _quantity = (_quantity - 1).clamp(1, 99)),
+                          () => _quantity = (_quantity - 1).clamp(1, p.stock > 0 ? p.stock : 99)),
                       enabled: _quantity > 1,
                     ),
                     SizedBox(
@@ -387,14 +370,13 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
                     _StepBtn(
                       icon: Icons.add_rounded,
                       onTap: () => setState(
-                          () => _quantity = (_quantity + 1).clamp(1, 99)),
-                      enabled: true,
+                          () => _quantity = (_quantity + 1).clamp(1, p.stock > 0 ? p.stock : 99)),
+                      enabled: p.stock > 0 && _quantity < p.stock,
                     ),
                   ],
                 ),
               ),
               const Spacer(),
-              // Subtotal
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -415,8 +397,6 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
             ],
           ),
           const SizedBox(height: 28),
-
-          // About section
           const Text(
             'About this product',
             style: TextStyle(
@@ -426,32 +406,29 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            widget.product.description,
+            p.description.isNotEmpty ? p.description : 'No additional description available.',
             style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey.shade600,
                 height: 1.6),
           ),
           const SizedBox(height: 24),
-
-          // Info tiles row
           Row(
             children: [
               Expanded(
                 child: _InfoTile(
-                  icon: Icons.access_time_rounded,
-                  label: 'Expires In',
-                  value:
-                      '${widget.product.daysLeft} ${widget.product.daysLeft == 1 ? 'Day' : 'Days'}',
+                  icon: Icons.category_rounded,
+                  label: 'Category',
+                  value: p.category.isNotEmpty ? p.category : 'General',
                   iconColor: _orange,
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: _InfoTile(
-                  icon: Icons.local_offer_rounded,
-                  label: 'Discount',
-                  value: '${widget.product.discountPct}% Off',
+                  icon: Icons.inventory_2_rounded,
+                  label: 'Available Stock',
+                  value: '${p.stock} units',
                   iconColor: _orange,
                 ),
               ),
@@ -459,8 +436,8 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
               Expanded(
                 child: _InfoTile(
                   icon: Icons.check_circle_rounded,
-                  label: 'Availability',
-                  value: 'In Stock',
+                  label: 'Status',
+                  value: p.status.toUpperCase(),
                   iconColor: _green,
                 ),
               ),
@@ -472,8 +449,9 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
     );
   }
 
-  // ── Sticky bottom bar ─────────────────────────────────────────────────────
   Widget _buildBottomBar(double subtotal) {
+    final bool canAdd = widget.product.stock > 0;
+
     return Container(
       padding: EdgeInsets.fromLTRB(
           20, 16, 20, MediaQuery.of(context).padding.bottom + 16),
@@ -489,7 +467,6 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
       ),
       child: Row(
         children: [
-          // Buy Now (outline)
           Expanded(
             child: OutlinedButton(
               onPressed: () => Navigator.of(context)
@@ -512,14 +489,13 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
             ),
           ),
           const SizedBox(width: 14),
-          // Add to Cart (filled)
           Expanded(
             flex: 2,
             child: ElevatedButton(
-              onPressed: _adding ? null : _addToCart,
+              onPressed: (_adding || !canAdd) ? null : _addToCart,
               style: ElevatedButton.styleFrom(
                 backgroundColor: _green,
-                disabledBackgroundColor: _green.withValues(alpha: 0.6),
+                disabledBackgroundColor: Colors.grey.shade400,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16)),
@@ -533,81 +509,14 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
                           color: Colors.white, strokeWidth: 2.5),
                     )
                   : Text(
-                      'Add to Cart  •  Rs.${subtotal.toStringAsFixed(0)}',
+                      canAdd
+                          ? 'Add to Cart  •  Rs.${subtotal.toStringAsFixed(0)}'
+                          : 'Out of Stock',
                       style: const TextStyle(
                           color: Colors.white,
                           fontSize: 14,
                           fontWeight: FontWeight.w800),
                     ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Reusable sub-widgets
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _SpecialBadge extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF8E1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFF9A825)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: const [
-          Icon(Icons.local_offer_rounded,
-              size: 13, color: Color(0xFFF9A825)),
-          SizedBox(width: 5),
-          Text(
-            'SPECIAL PRICE',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFFF9A825),
-              letterSpacing: 0.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ExpiryChip extends StatelessWidget {
-  final int daysLeft;
-  const _ExpiryChip({required this.daysLeft});
-
-  @override
-  Widget build(BuildContext context) {
-    final isUrgent = daysLeft <= 2;
-    final color = isUrgent ? const Color(0xFFEF6C00) : const Color(0xFFF9A825);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.5)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.access_time_rounded, size: 13, color: color),
-          const SizedBox(width: 5),
-          Text(
-            '$daysLeft ${daysLeft == 1 ? 'Day' : 'Days'} Left',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: color,
             ),
           ),
         ],
@@ -654,6 +563,8 @@ class _InfoTile extends StatelessWidget {
                   fontSize: 11, color: Color(0xFF9E9E9E))),
           const SizedBox(height: 2),
           Text(value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,

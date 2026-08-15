@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'app_theme.dart';
 
 /// A pill-shaped language selector button used in the header.
 ///
@@ -17,7 +18,7 @@ class LanguageButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const Color green = Color(0xFF1B8A3D);
+    const Color green = AppColors.brand;
 
     return Material(
       color: Colors.transparent,

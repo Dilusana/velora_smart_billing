@@ -23,19 +23,37 @@ class CartDatabase {
   Future<Database> _initDB(String fileName) async {
     final Directory appDocDir = await getApplicationDocumentsDirectory();
     final String path = join(appDocDir.path, fileName);
-    return await openDatabase(path, version: 1, onCreate: _createDB);
+    return await openDatabase(
+      path,
+      version: 2,
+      onCreate: _createDB,
+      onUpgrade: _onUpgrade,
+    );
   }
 
   Future _createDB(Database db, int version) async {
     await db.execute('''
       CREATE TABLE cart (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        productId TEXT,
         category TEXT NOT NULL,
         title TEXT NOT NULL,
         description TEXT NOT NULL,
+        price REAL,
         quantity INTEGER NOT NULL
       )
     ''');
+  }
+
+  Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      try {
+        await db.execute('ALTER TABLE cart ADD COLUMN productId TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE cart ADD COLUMN price REAL');
+      } catch (_) {}
+    }
   }
 
   Future<CartItem> insertItem(CartItem item) async {
@@ -55,7 +73,11 @@ class CartDatabase {
 
     if (existing.isNotEmpty) {
       final current = CartItem.fromMap(existing.first);
-      final updated = current.copyWith(quantity: current.quantity + item.quantity);
+      final updated = current.copyWith(
+        productId: item.productId.isNotEmpty ? item.productId : current.productId,
+        price: item.price > 0 ? item.price : current.price,
+        quantity: current.quantity + item.quantity,
+      );
       await updateItem(updated);
       return updated;
     }
