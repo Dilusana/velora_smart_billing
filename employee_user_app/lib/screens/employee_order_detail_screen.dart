@@ -233,18 +233,97 @@ class EmployeeOrderDetailScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 14),
 
-                        // Customer Details
+                        // Order ID & Customer Details
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'ORDER ID',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w900,
+                                      color: const Color(0xFF6B7280),
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  SelectableText(
+                                    displayOrder.id,
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(0xFF1A2D5A),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+
                         Row(
                           children: [
-                            Text('Customer: ', style: GoogleFonts.outfit(fontSize: 12, color: const Color(0xFF6B7280))),
-                            Text(
-                              displayOrder.customerName,
-                              style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w800, color: const Color(0xFF1A2D5A)),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'CUSTOMER NAME',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w900,
+                                      color: const Color(0xFF6B7280),
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    displayOrder.customerName,
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(0xFF1A2D5A),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                            if (displayOrder.customerPhone.isNotEmpty) ...[
-                              const SizedBox(width: 10),
-                              Text('(${displayOrder.customerPhone})', style: GoogleFonts.outfit(fontSize: 12, color: const Color(0xFF6B7280))),
-                            ],
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'PHONE NUMBER',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w900,
+                                      color: const Color(0xFF6B7280),
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.phone_rounded, size: 13, color: Color(0xFF16A34A)),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        displayOrder.customerPhone.isNotEmpty ? displayOrder.customerPhone : 'Not Provided',
+                                        style: GoogleFonts.outfit(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w800,
+                                          color: displayOrder.customerPhone.isNotEmpty ? const Color(0xFF16A34A) : const Color(0xFF9CA3AF),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 14),
@@ -627,71 +706,161 @@ class EmployeeOrderDetailScreen extends StatelessWidget {
                   const SizedBox(height: 20),
 
                   // Action Button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: Builder(
-                      builder: (context) {
-                        final isAllPicked = displayOrder.totalItemsCount > 0 &&
-                            displayOrder.pickedItemsCount == displayOrder.totalItemsCount;
-                        final isCompletedOrder = isAllPicked ||
-                            statusNorm == 'COMPLETED' ||
-                            statusNorm == 'READY' ||
-                            statusNorm == 'DELIVERED';
+                  Builder(
+                    builder: (context) {
+                      final isAllPicked = displayOrder.totalItemsCount > 0 &&
+                          displayOrder.pickedItemsCount == displayOrder.totalItemsCount;
+                      final isCompletedOrder = isAllPicked ||
+                          statusNorm == 'COMPLETED' ||
+                          statusNorm == 'READY';
+                      final isAlreadyCollectedOrDelivered = statusNorm == 'COLLECTED' || statusNorm == 'DELIVERED';
 
-                        return ElevatedButton(
-                          onPressed: () async {
-                            if (statusNorm == 'NEW' || statusNorm == 'ASSIGNED') {
-                              await OrderService.updateOrderStatus(displayOrder.id, 'Picking');
-                            }
-                            if (context.mounted) {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => EmployeeItemPickingScreen(orderId: displayOrder.id),
-                                ),
-                              );
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFC8E635),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            elevation: 0,
+                      if (isAlreadyCollectedOrDelivered) {
+                        return Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFF86EFAC)),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              if (isCompletedOrder) ...[
-                                const Icon(Icons.check_circle_rounded, color: Color(0xFF1A2D5A), size: 20),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Order Completed (View Items)',
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
-                                    color: const Color(0xFF1A2D5A),
-                                  ),
+                              const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 22),
+                              const SizedBox(width: 8),
+                              Text(
+                                statusNorm == 'COLLECTED' ? 'Order Collected by Customer' : 'Order Delivered to Customer',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF16A34A),
                                 ),
-                              ] else ...[
-                                Text(
-                                  statusNorm == 'NEW'
-                                      ? 'Accept & Start Picking'
-                                      : (statusNorm == 'PICKING'
-                                          ? 'Continue Picking Items (${displayOrder.pickedItemsCount}/${displayOrder.totalItemsCount})'
-                                          : 'Start Picking Items'),
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
-                                    color: const Color(0xFF1A2D5A),
-                                  ),
-                                ),
-                              ],
+                              ),
                             ],
                           ),
                         );
-                      },
-                    ),
+                      }
+
+                      return Column(
+                        children: [
+                          if (isCompletedOrder) ...[
+                            SizedBox(
+                              width: double.infinity,
+                              height: 52,
+                              child: ElevatedButton.icon(
+                                onPressed: () async {
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                      title: Text('Customer Collected Order?', style: GoogleFonts.outfit(fontWeight: FontWeight.w800, color: const Color(0xFF1A2D5A))),
+                                      content: Text('Mark ${displayOrder.displayId} as collected by customer? It will be removed from the active queue and moved to history.', style: GoogleFonts.outfit(fontSize: 13)),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(ctx, false),
+                                          child: Text('Cancel', style: GoogleFonts.outfit(color: const Color(0xFF6B7280))),
+                                        ),
+                                        ElevatedButton(
+                                          onPressed: () => Navigator.pop(ctx, true),
+                                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF16A34A), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                                          child: Text('Confirm Collected', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+
+                                  if (confirmed == true) {
+                                    await OrderService.updateOrderStatus(displayOrder.id, 'Collected');
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('✅ ${displayOrder.displayId} marked as collected and moved to history!', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700)),
+                                          backgroundColor: const Color(0xFF16A34A),
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                                icon: const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                                label: Text(
+                                  'Mark as Collected by Customer',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF16A34A),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  elevation: 0,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          SizedBox(
+                            width: double.infinity,
+                            height: 52,
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                if (statusNorm == 'NEW' || statusNorm == 'ASSIGNED') {
+                                  await OrderService.updateOrderStatus(displayOrder.id, 'Picking');
+                                }
+                                if (context.mounted) {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => EmployeeItemPickingScreen(orderId: displayOrder.id),
+                                    ),
+                                  );
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isCompletedOrder ? const Color(0xFFEFF8C6) : const Color(0xFFC8E635),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                elevation: 0,
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (isCompletedOrder) ...[
+                                    const Icon(Icons.list_alt_rounded, color: Color(0xFF1A2D5A), size: 20),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'View Picked Items',
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                        color: const Color(0xFF1A2D5A),
+                                      ),
+                                    ),
+                                  ] else ...[
+                                    Text(
+                                      statusNorm == 'NEW'
+                                          ? 'Accept & Start Picking'
+                                          : (statusNorm == 'PICKING'
+                                              ? 'Continue Picking Items (${displayOrder.pickedItemsCount}/${displayOrder.totalItemsCount})'
+                                              : 'Start Picking Items'),
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w800,
+                                        color: const Color(0xFF1A2D5A),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                   const SizedBox(height: 20),
                 ],

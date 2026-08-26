@@ -2,20 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class EmployeeAlertsScreen extends StatefulWidget {
-  const EmployeeAlertsScreen({super.key});
+  final bool showBackButton;
+  const EmployeeAlertsScreen({super.key, this.showBackButton = false});
 
   @override
   State<EmployeeAlertsScreen> createState() => _EmployeeAlertsScreenState();
 }
 
+class AlertFilterItem {
+  final String label;
+  final int? count;
+  final bool isUrgent;
+  const AlertFilterItem({required this.label, this.count, this.isUrgent = false});
+}
+
 class _EmployeeAlertsScreenState extends State<EmployeeAlertsScreen> {
   int _selectedFilterIndex = 0;
 
-  final List<Map<String, dynamic>> _filters = [
-    {'label': 'All', 'count': null},
-    {'label': 'Orders', 'count': 4},
-    {'label': 'Urgent', 'count': 1, 'isUrgent': true},
-    {'label': 'System', 'count': null},
+  final List<AlertFilterItem> _filters = const [
+    AlertFilterItem(label: 'All'),
+    AlertFilterItem(label: 'Orders', count: 4),
+    AlertFilterItem(label: 'Urgent', count: 1, isUrgent: true),
+    AlertFilterItem(label: 'System'),
   ];
 
   @override
@@ -31,18 +39,28 @@ class _EmployeeAlertsScreenState extends State<EmployeeAlertsScreen> {
               // Header Bar
               Row(
                 children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      image: DecorationImage(
-                        image: NetworkImage('https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'),
-                        fit: BoxFit.cover,
+                  if (widget.showBackButton) ...[
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF1A2D5A)),
+                      onPressed: () => Navigator.of(context).pop(),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                    const SizedBox(width: 10),
+                  ] else ...[
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        image: DecorationImage(
+                          image: NetworkImage('https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'),
+                          fit: BoxFit.cover,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
+                    const SizedBox(width: 10),
+                  ],
                   Text(
                     'Velora',
                     style: GoogleFonts.outfit(
@@ -124,7 +142,7 @@ class _EmployeeAlertsScreenState extends State<EmployeeAlertsScreen> {
                   itemBuilder: (context, index) {
                     final filter = _filters[index];
                     final isSelected = _selectedFilterIndex == index;
-                    final isUrgentChip = filter['isUrgent'] == true;
+                    final isUrgentChip = filter.isUrgent;
 
                     return GestureDetector(
                       onTap: () => setState(() => _selectedFilterIndex = index),
@@ -143,14 +161,14 @@ class _EmployeeAlertsScreenState extends State<EmployeeAlertsScreen> {
                         child: Row(
                           children: [
                             Text(
-                              filter['label'] as String,
+                              filter.label,
                               style: GoogleFonts.outfit(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
                                 color: isSelected ? Colors.white : const Color(0xFF374151),
                               ),
                             ),
-                            if (filter['count'] != null) ...[
+                            if (filter.count != null) ...[
                               const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -161,7 +179,7 @@ class _EmployeeAlertsScreenState extends State<EmployeeAlertsScreen> {
                                   shape: BoxShape.circle,
                                 ),
                                 child: Text(
-                                  '${filter['count']}',
+                                  '${filter.count}',
                                   style: GoogleFonts.outfit(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w800,

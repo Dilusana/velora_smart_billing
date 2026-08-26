@@ -5,6 +5,7 @@ import '../services/order_service.dart';
 import 'employee_orders_screen.dart';
 import 'employee_order_detail_screen.dart';
 import 'employee_item_picking_screen.dart';
+import 'employee_alerts_screen.dart';
 
 class EmployeeHomeScreen extends StatelessWidget {
   const EmployeeHomeScreen({super.key});
@@ -20,8 +21,8 @@ class EmployeeHomeScreen extends StatelessWidget {
             final orders = snapshot.data ?? [];
 
             final assignedTodayCount = orders.length;
-            final completedCount = orders.where((o) => o.normalizedStatus == 'COMPLETED').length;
-            final inProgressCount = orders.where((o) => o.normalizedStatus == 'PICKING' || o.normalizedStatus == 'PACKING' || o.normalizedStatus == 'ASSIGNED').length;
+            final completedCount = orders.where((o) => o.normalizedStatus == 'COMPLETED' || o.normalizedStatus == 'COLLECTED' || o.normalizedStatus == 'DELIVERED').length;
+            final inProgressCount = orders.where((o) => o.normalizedStatus == 'PICKING' || o.normalizedStatus == 'PACKING' || o.normalizedStatus == 'ASSIGNED' || o.normalizedStatus == 'READY' || o.normalizedStatus == 'PROCESSING' || o.normalizedStatus == 'NEW').length;
             final urgentCount = orders.where((o) => o.specialInstructions.isNotEmpty || o.normalizedStatus == 'NEW').length;
 
             return SingleChildScrollView(
@@ -73,36 +74,43 @@ class EmployeeHomeScreen extends StatelessWidget {
                           ],
                         ),
                       ),
-                      Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.04),
-                              blurRadius: 8,
-                            ),
-                          ],
-                        ),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            const Icon(Icons.notifications_none_rounded, color: Color(0xFF1A2D5A), size: 20),
-                            Positioned(
-                              right: 10,
-                              top: 10,
-                              child: Container(
-                                width: 6,
-                                height: 6,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFFDC2626),
-                                  shape: BoxShape.circle,
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const EmployeeAlertsScreen(showBackButton: true)),
+                          );
+                        },
+                        child: Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 8,
+                              ),
+                            ],
+                          ),
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              const Icon(Icons.notifications_none_rounded, color: Color(0xFF1A2D5A), size: 20),
+                              Positioned(
+                                right: 10,
+                                top: 10,
+                                child: Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFDC2626),
+                                    shape: BoxShape.circle,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -197,39 +205,48 @@ class EmployeeHomeScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
 
-                  if (orders.isEmpty) ...[
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline, color: Color(0xFF6B7280)),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'No orders yet today. New orders will appear here automatically.',
-                              style: GoogleFonts.outfit(fontSize: 12, color: const Color(0xFF6B7280)),
-                            ),
+                  Builder(
+                    builder: (context) {
+                      // Active Queue only includes orders not yet collected/delivered
+                      final activeOrders = orders.where((o) => o.normalizedStatus != 'DELIVERED' && o.normalizedStatus != 'COLLECTED').toList();
+
+                      if (activeOrders.isEmpty) {
+                        return Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
                           ),
-                        ],
-                      ),
-                    ),
-                  ] else ...[
-                    ...orders.take(2).map((order) {
-                      final isPrimary = order.normalizedStatus == 'PICKING';
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _buildOrderProgressCard(
-                          context: context,
-                          order: order,
-                          isPrimaryAction: isPrimary,
-                        ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF16A34A)),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'All orders today have been processed and collected!',
+                                  style: GoogleFonts.outfit(fontSize: 12, color: const Color(0xFF16A34A), fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      return Column(
+                        children: activeOrders.take(3).map((order) {
+                          final isPrimary = order.normalizedStatus == 'PICKING';
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _buildOrderProgressCard(
+                              context: context,
+                              order: order,
+                              isPrimaryAction: isPrimary,
+                            ),
+                          );
+                        }).toList(),
                       );
-                    }),
-                  ],
+                    },
+                  ),
 
 
 
@@ -500,6 +517,65 @@ class EmployeeHomeScreen extends StatelessWidget {
                 ),
               ),
               const Spacer(),
+              if (order.normalizedStatus == 'COMPLETED' || order.normalizedStatus == 'READY') ...[
+                SizedBox(
+                  height: 36,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          title: Text('Customer Collected Order?', style: GoogleFonts.outfit(fontWeight: FontWeight.w800, color: const Color(0xFF1A2D5A))),
+                          content: Text('Mark ${order.displayId} as collected by customer? It will be removed from the active queue and moved to history.', style: GoogleFonts.outfit(fontSize: 13)),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: Text('Cancel', style: GoogleFonts.outfit(color: const Color(0xFF6B7280))),
+                            ),
+                            ElevatedButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF16A34A), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                              child: Text('Confirm Collected', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700)),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (confirmed == true) {
+                        await OrderService.updateOrderStatus(order.id, 'Collected');
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('✅ ${order.displayId} marked as collected and moved to history!', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700)),
+                              backgroundColor: const Color(0xFF16A34A),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.check_circle_outline_rounded, size: 16, color: Colors.white),
+                    label: Text(
+                      'Mark Collected',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF16A34A),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               SizedBox(
                 height: 36,
                 child: isPrimaryAction

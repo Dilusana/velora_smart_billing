@@ -9,6 +9,7 @@ import '../../models/order_model.dart';
 import '../../services/driver_auth_service.dart';
 import '../../services/driver_tracking_service.dart';
 import '../../services/order_service.dart';
+import '../../services/sms_service.dart';
 import 'driver_delivery_detail_screen.dart';
 
 class DriverMapScreen extends StatefulWidget {
@@ -961,6 +962,17 @@ class _DriverMapScreenState extends State<DriverMapScreen>
                                 if (widget.order != null) {
                                   await OrderService.updateOrderStatus(
                                       widget.order!.id, 'Arrived');
+
+                                  // Send SMS arrival notification to customer
+                                  final phone = widget.order!.customerPhone;
+                                  if (phone.isNotEmpty) {
+                                    SmsService.instance.sendDriverArrivedSms(
+                                      orderDocId: widget.order!.id,
+                                      customerPhone: phone,
+                                      customerName: widget.order!.customerName,
+                                      driverName: DriverAuthService.instance.driverName,
+                                    );
+                                  }
                                 }
                                 if (!mounted) return;
                                 nav.push(

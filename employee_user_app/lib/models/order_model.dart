@@ -206,13 +206,22 @@ class OrderModel {
       data['assignedDriverName'] ?? data['driverName'],
     );
 
+    String parsedPhone = _parseString(data['customerPhone'] ?? data['phone'] ?? data['customer_phone'] ?? data['mobile']);
+    final custIdStr = _parseString(data['customerId']);
+    if (parsedPhone.isEmpty && custIdStr.startsWith('cust_')) {
+      final potentialPhone = custIdStr.replaceFirst('cust_', '');
+      if (RegExp(r'^[0-9+]+$').hasMatch(potentialPhone)) {
+        parsedPhone = potentialPhone;
+      }
+    }
+
     return OrderModel(
       id: doc.id,
       branch: _parseString(data['branch'], 'Main Branch'),
       createdAt: parsedCreated,
-      customerId: _parseString(data['customerId']),
+      customerId: custIdStr,
       customerName: _parseString(data['customerName'] ?? data['users'], 'Customer'),
-      customerPhone: _parseString(data['customerPhone']),
+      customerPhone: parsedPhone,
       deliveryAddress: delAddr,
       deliveryFee: delFee,
       deliveryType: delType,
@@ -280,6 +289,9 @@ class OrderModel {
     return id.toUpperCase();
   }
 
+  String get driverName => assignedDriverName;
+  String get driverId => assignedDriverId;
+
   int get totalItemsCount {
     if (items.isEmpty) return 0;
     return items.fold(0, (acc, item) => acc + item.quantity);
@@ -336,13 +348,19 @@ class OrderModel {
     if (s == 'ready' || s == 'ready for pickup') return 'READY';
     if (s == 'out_for_delivery' || s == 'out for delivery' || s == 'on the way') return 'OUT FOR DELIVERY';
     if (s == 'delivered') return 'DELIVERED';
+    if (s == 'collected') return 'COLLECTED';
     if (s == 'completed') return 'COMPLETED';
     return s.toUpperCase();
   }
 
-  /// Whether the order is delivered to the customer
+  /// Whether the order is delivered or collected by the customer (completed history)
   bool get isDelivered {
-    return normalizedStatus == 'DELIVERED';
+    return normalizedStatus == 'DELIVERED' || normalizedStatus == 'COLLECTED';
+  }
+
+  /// Whether the order is collected by the customer
+  bool get isCollected {
+    return normalizedStatus == 'COLLECTED';
   }
 
   /// Check if the order is assigned to a specific driver ID
@@ -401,6 +419,8 @@ class OrderModel {
         return 'Out for Delivery';
       case 'DELIVERED':
         return 'Delivered to Customer';
+      case 'COLLECTED':
+        return 'Collected by Customer';
       case 'COMPLETED':
         return 'Order Completed';
       default:

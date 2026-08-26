@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/order_model.dart';
+import 'sms_service.dart';
 
 class OrderService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -213,6 +214,42 @@ class OrderService {
         updateData['deliveredAt'] = FieldValue.serverTimestamp();
       }
       await _ordersCol.doc(docId).update(updateData);
+
+      // Trigger automatic SMS notification to customer if status is Completed / Ready / Arrived
+      if (newStatus.toLowerCase() == 'completed' || newStatus.toLowerCase() == 'ready') {
+        _ordersCol.doc(docId).get().then((docSnapshot) {
+          if (docSnapshot.exists) {
+            final order = OrderModel.fromFirestore(docSnapshot);
+            if (order.customerPhone.isNotEmpty) {
+              SmsService.instance.sendOrderCompletedSms(
+                orderDocId: order.id,
+                customerPhone: order.customerPhone,
+                customerName: order.customerName,
+                totalAmount: order.total,
+              );
+            }
+          }
+        }).catchError((e) {
+          debugPrint('Error triggering completion SMS: $e');
+        });
+      } else if (newStatus.toLowerCase() == 'arrived') {
+        _ordersCol.doc(docId).get().then((docSnapshot) {
+          if (docSnapshot.exists) {
+            final order = OrderModel.fromFirestore(docSnapshot);
+            if (order.customerPhone.isNotEmpty) {
+              SmsService.instance.sendDriverArrivedSms(
+                orderDocId: order.id,
+                customerPhone: order.customerPhone,
+                customerName: order.customerName,
+                driverName: order.driverName.isNotEmpty ? order.driverName : null,
+              );
+            }
+          }
+        }).catchError((e) {
+          debugPrint('Error triggering arrival SMS: $e');
+        });
+      }
+
       return true;
     } catch (e) {
       debugPrint('Error updating order status for $docId: $e');

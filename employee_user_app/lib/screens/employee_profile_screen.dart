@@ -63,7 +63,6 @@ class EmployeeProfileScreen extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: const Icon(Icons.notifications_none_rounded, color: Color(0xFF1A2D5A), size: 18),
                   ),
                 ],
               ),
@@ -181,11 +180,11 @@ class EmployeeProfileScreen extends StatelessWidget {
 
               // Live Stream for Stats and Order History
               StreamBuilder<List<OrderModel>>(
-                stream: OrderService.getAllOrdersStream(),
+                stream: OrderService.getOrdersStream(),
                 builder: (context, snapshot) {
                   final orders = snapshot.data ?? [];
-                  final completedOrders = orders.where((o) => o.normalizedStatus == 'COMPLETED' || o.normalizedStatus == 'DELIVERED').toList();
-                  final inProgressOrders = orders.where((o) => o.normalizedStatus != 'COMPLETED' && o.normalizedStatus != 'DELIVERED').toList();
+                  final completedOrders = orders.where((o) => o.normalizedStatus == 'COMPLETED' || o.normalizedStatus == 'COLLECTED' || o.normalizedStatus == 'DELIVERED').toList();
+                  final inProgressOrders = orders.where((o) => o.normalizedStatus != 'COMPLETED' && o.normalizedStatus != 'COLLECTED' && o.normalizedStatus != 'DELIVERED').toList();
 
                   final completedCountStr = completedOrders.length < 10 ? '0${completedOrders.length}' : '${completedOrders.length}';
                   final inProgressCountStr = inProgressOrders.length < 10 ? '0${inProgressOrders.length}' : '${inProgressOrders.length}';
@@ -481,55 +480,8 @@ class EmployeeProfileScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
 
-              // Support & Resources Section
-              Text(
-                'Support & Resources',
-                style: GoogleFonts.outfit(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF1A2D5A),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF9F9F6),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.import_contacts_rounded, size: 20, color: Color(0xFF1A2D5A)),
-                          const SizedBox(width: 8),
-                          Text('Training Hub', style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w800, color: const Color(0xFF1A2D5A))),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF9F9F6),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.headset_mic_outlined, size: 20, color: Color(0xFF1A2D5A)),
-                          const SizedBox(width: 8),
-                          Text('IT Support', style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w800, color: const Color(0xFF1A2D5A))),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              
               const SizedBox(height: 28),
 
               // Logout Button

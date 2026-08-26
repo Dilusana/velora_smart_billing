@@ -32,15 +32,41 @@ class DriverMetricsScreen extends StatelessWidget {
           builder: (context, snapshot) {
             final orders = snapshot.data ?? [];
             final deliveryOrders = orders.where((o) => o.isDelivery).toList();
+
+            final now = DateTime.now();
+            final todayStart = DateTime(now.year, now.month, now.day);
+            final todayEnd = todayStart.add(const Duration(days: 1));
+
+            // Completed orders (all historical completed/delivered/collected)
             final completedOrders = deliveryOrders
-                .where((o) => o.normalizedStatus == 'COMPLETED' || o.normalizedStatus == 'DELIVERED')
-                .toList();
-            final inQueueOrders = deliveryOrders
-                .where((o) => o.normalizedStatus != 'COMPLETED' && o.normalizedStatus != 'DELIVERED')
+                .where((o) => o.isDelivered || o.normalizedStatus == 'COMPLETED' || o.normalizedStatus == 'DELIVERED' || o.normalizedStatus == 'COLLECTED')
                 .toList();
 
-            final totalEarnings = completedOrders.fold<num>(0, (sum, o) => sum + o.total);
-            final totalDeliveryFees = completedOrders.fold<num>(0, (sum, o) => sum + (o.deliveryFee > 0 ? o.deliveryFee : 300));
+            // Today's completed orders
+            final todayCompletedOrders = completedOrders.where((o) {
+              final delDate = o.deliveredAt ?? o.createdAt;
+              return (delDate.isAfter(todayStart) && delDate.isBefore(todayEnd)) ||
+                  (delDate.year == now.year && delDate.month == now.month && delDate.day == now.day);
+            }).toList();
+
+            // Active delivery queue (orders that are currently waiting for delivery or out for delivery, not delivered)
+            final inQueueOrders = deliveryOrders
+                .where((o) => !o.isDelivered &&
+                    (o.normalizedStatus == 'OUT FOR DELIVERY' ||
+                     o.normalizedStatus == 'READY' ||
+                     o.normalizedStatus == 'COMPLETED' ||
+                     o.normalizedStatus == 'ASSIGNED' ||
+                     o.normalizedStatus == 'PICKING' ||
+                     o.normalizedStatus == 'NEW' ||
+                     o.normalizedStatus == 'PROCESSING'))
+                .toList();
+
+            // Total revenue from all completed orders
+            final totalRevenue = completedOrders.fold<num>(0, (sum, o) => sum + o.total);
+
+            // Today's revenue amount (from orders completed today)
+            final todayAmount = todayCompletedOrders.fold<num>(0, (sum, o) => sum + o.total);
+
             final recentCompleted = completedOrders.take(6).toList();
 
             return SingleChildScrollView(
@@ -197,7 +223,7 @@ class DriverMetricsScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 16),
 
-                        // Earnings Card
+                        // Total Revenue & Today Amount Card (Payout removed)
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(20),
@@ -218,38 +244,45 @@ class DriverMetricsScreen extends StatelessWidget {
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
-                                    'Delivered Volume',
+                                    'Total Revenue',
                                     style: GoogleFonts.outfit(
                                       fontSize: 13,
                                       color: const Color(0xFF6B7280),
                                     ),
                                   ),
-                                  Text(
-                                    'Payout: Rs. $totalDeliveryFees',
-                                    style: GoogleFonts.outfit(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w800,
-                                      color: const Color(0xFF2E6B2A),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFDCFCE7),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      'Today: Rs. ${todayAmount.toStringAsFixed(0)}',
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                        color: const Color(0xFF16A34A),
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 4),
+                              const SizedBox(height: 6),
                               Text(
-                                'Rs. $totalEarnings',
+                                'Rs. ${totalRevenue.toStringAsFixed(0)}',
                                 style: GoogleFonts.outfit(
                                   fontSize: 26,
                                   fontWeight: FontWeight.w900,
                                   color: const Color(0xFF1B3E19),
                                 ),
                               ),
-                              const SizedBox(height: 4),
+                              const SizedBox(height: 6),
                               Row(
                                 children: [
                                   const Icon(Icons.trending_up_rounded, size: 14, color: Color(0xFF2E6B2A)),
                                   const SizedBox(width: 4),
                                   Text(
-                                    '${completedOrders.length} Completed ${completedOrders.length == 1 ? 'Order' : 'Orders'} Today',
+                                    '${todayCompletedOrders.length} Completed Today • ${completedOrders.length} Total Delivered',
                                     style: GoogleFonts.outfit(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w700,
@@ -439,54 +472,6 @@ class DriverMetricsScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 20),
 
-                        // Downtown Hub Rank Section
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Downtown Hub Rank',
-                              style: GoogleFonts.outfit(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF1B3E19),
-                              ),
-                            ),
-                            Text(
-                              'VIEW ALL',
-                              style: GoogleFonts.outfit(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF1B3E19),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.03),
-                                blurRadius: 10,
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            children: [
-                              _buildRankRow('1', 'S. Rahman', '99% Efficiency', Icons.emoji_events_rounded, iconColor: const Color(0xFFEAB308)),
-                              const SizedBox(height: 10),
-                              _buildRankRow('2', 'You', '96% Efficiency', Icons.arrow_upward_rounded, isYou: true),
-                              const SizedBox(height: 10),
-                              _buildRankRow('3', 'J. Davis', '92% Efficiency', null),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-
                         // Logout Button
                         SizedBox(
                           width: double.infinity,
@@ -578,80 +563,6 @@ class DriverMetricsScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildRankRow(String rank, String name, String efficiency, IconData? icon, {Color? iconColor, bool isYou = false}) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isYou ? const Color(0xFFF7FEE7) : Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        border: isYou ? Border.all(color: const Color(0xFF1B3E19), width: 1.5) : null,
-      ),
-      child: Row(
-        children: [
-          Text(
-            rank,
-            style: GoogleFonts.outfit(
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-              color: const Color(0xFF1B3E19),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFFE5E7EB),
-              image: isYou
-                  ? const DecorationImage(
-                      image: NetworkImage('https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'),
-                      fit: BoxFit.cover,
-                    )
-                  : null,
-            ),
-            child: !isYou
-                ? Center(
-                    child: Text(
-                      name[0],
-                      style: GoogleFonts.outfit(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF374151),
-                      ),
-                    ),
-                  )
-                : null,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: GoogleFonts.outfit(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF1B3E19),
-                  ),
-                ),
-                Text(
-                  efficiency,
-                  style: GoogleFonts.outfit(
-                    fontSize: 10,
-                    color: const Color(0xFF6B7280),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (icon != null) Icon(icon, color: iconColor ?? const Color(0xFF1B3E19), size: 18),
-        ],
       ),
     );
   }
