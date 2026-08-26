@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'category.dart';
+import 'category_repository.dart';
 import 'category_card.dart';
 import 'language_button.dart';
 import 'cart_button.dart';
@@ -167,28 +168,55 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
 
   // ---------------------------------------------------------------------
-  // CATEGORY GRID — responsive 2 rows x 3 columns on tablets, collapsing
-  // to 2 columns on narrower / portrait-ish widths.
+  // CATEGORY GRID — dynamic grid streaming from Firestore categories table
   // ---------------------------------------------------------------------
   Widget _buildCategoryGrid(double width) {
     final int crossAxisCount = width > 900 ? 3 : 2;
     final double aspectRatio = width > 900 ? 1.55 : 1.35;
 
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: kCategories.length,
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        mainAxisSpacing: 20,
-        crossAxisSpacing: 20,
-        childAspectRatio: aspectRatio,
-      ),
-      itemBuilder: (context, index) {
-        final category = kCategories[index];
-        return CategoryCard(
-          category: category,
-          onTap: () => _onCategoryTap(category),
+    return StreamBuilder<List<CategoryItem>>(
+      stream: KioskCategoryRepository.instance.getCategoriesStream(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(32.0),
+              child: CircularProgressIndicator(color: AppColors.brand),
+            ),
+          );
+        }
+
+        final categories = snapshot.data ?? kCategories;
+
+        if (categories.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(32.0),
+              child: Text(
+                'No categories available.',
+                style: TextStyle(fontSize: 16, color: AppColors.secondaryText),
+              ),
+            ),
+          );
+        }
+
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: categories.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            mainAxisSpacing: 20,
+            crossAxisSpacing: 20,
+            childAspectRatio: aspectRatio,
+          ),
+          itemBuilder: (context, index) {
+            final category = categories[index];
+            return CategoryCard(
+              category: category,
+              onTap: () => _onCategoryTap(category),
+            );
+          },
         );
       },
     );

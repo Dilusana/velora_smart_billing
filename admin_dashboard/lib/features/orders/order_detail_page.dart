@@ -501,7 +501,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
                   'Date: ${DateFormat('dd MMM yyyy').format(order.createdAt)}'),
               pw.Text('Customer: ${order.customerName}'),
               pw.SizedBox(height: 16),
-              pw.Table.fromTextArray(
+              pw.TableHelper.fromTextArray(
                 headers: ['Product', 'Qty', 'Unit Price', 'Total'],
                 data: order.items
                     .map((item) => [

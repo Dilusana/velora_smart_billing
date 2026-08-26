@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'app_theme.dart';
 
@@ -20,6 +21,7 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
   int _quantity = 1;
   int _cartCount = 0;
   bool _adding = false;
+  String? _resolvedCategoryName;
 
   static const Color _green = AppColors.brand;
   static const Color _orange = AppColors.cta;
@@ -29,6 +31,58 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
   void initState() {
     super.initState();
     _refreshCart();
+    _resolveCategoryName();
+  }
+
+  /// Resolves the category name from Firestore if the product's category field
+  /// looks like a Firestore document ID rather than a human-readable name.
+  Future<void> _resolveCategoryName() async {
+    final p = widget.product;
+    final cat = p.category;
+    final catId = p.categoryId;
+
+    // If category is already a readable name (contains spaces, letters, &, etc.), use it directly
+    if (cat.isNotEmpty && !_looksLikeDocId(cat)) {
+      setState(() => _resolvedCategoryName = cat);
+      return;
+    }
+
+    // Try to look up the category name from Firestore using categoryId or category (if it's an ID)
+    final idToLookup = catId.isNotEmpty ? catId : cat;
+    if (idToLookup.isEmpty) {
+      setState(() => _resolvedCategoryName = 'General');
+      return;
+    }
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('categories')
+          .doc(idToLookup)
+          .get();
+      if (doc.exists) {
+        final data = doc.data() ?? {};
+        final name = (data['name'] ?? data['title'] ?? '').toString();
+        if (name.isNotEmpty && mounted) {
+          setState(() => _resolvedCategoryName = name);
+          return;
+        }
+      }
+    } catch (_) {
+      // Firestore unavailable — fallback
+    }
+
+    // Fallback: use whatever we have
+    if (mounted) {
+      setState(() => _resolvedCategoryName = cat.isNotEmpty ? cat : 'General');
+    }
+  }
+
+  /// Heuristic: a string that is 15+ chars, has no spaces, and is alphanumeric
+  /// is likely a Firestore auto-generated document ID.
+  bool _looksLikeDocId(String value) {
+    if (value.length < 15) return false;
+    if (value.contains(' ')) return false;
+    return RegExp(r'^[a-zA-Z0-9]+$').hasMatch(value);
   }
 
   Future<void> _refreshCart() async {
@@ -184,11 +238,11 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
           children: [
             const SizedBox(height: 28),
             Container(
-              width: 180,
-              height: 180,
+              width: 280,
+              height: 280,
               decoration: BoxDecoration(
                 color: _green.withValues(alpha: 0.13),
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(32),
                 boxShadow: [
                   BoxShadow(
                     color: _green.withValues(alpha: 0.18),
@@ -198,53 +252,20 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
                 ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(32),
                 child: hasWebImage
                     ? Image.network(
                         p.imageUrl,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Icon(Icons.shopping_bag_rounded, size: 90, color: _green),
+                        errorBuilder: (_, __, ___) => const Icon(Icons.shopping_bag_rounded, size: 140, color: _green),
                       )
                     : hasAssetImage
                         ? Image.asset(
                             p.imageUrl,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(Icons.shopping_bag_rounded, size: 90, color: _green),
+                            errorBuilder: (_, __, ___) => const Icon(Icons.shopping_bag_rounded, size: 140, color: _green),
                           )
-                        : const Icon(Icons.shopping_bag_rounded, size: 90, color: _green),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: p.stock > 0 ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: p.stock > 0 ? _green : Colors.red),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(p.stock > 0 ? Icons.check_circle_rounded : Icons.error_outline_rounded,
-                            size: 13, color: p.stock > 0 ? _green : Colors.red),
-                        const SizedBox(width: 5),
-                        Text(
-                          p.stock > 0 ? 'Stock: ${p.stock}' : 'Out of Stock',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            color: p.stock > 0 ? _green : Colors.red,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                        : const Icon(Icons.shopping_bag_rounded, size: 140, color: _green),
               ),
             ),
             const SizedBox(height: 24),
@@ -308,23 +329,6 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
                     ),
                   ],
                 ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: p.stock > 10 ? const Color(0xFFE9F7ED) : const Color(0xFFFFF4E5),
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: Text(
-                    p.stock > 10 ? 'In Stock' : 'Low Stock',
-                    style: TextStyle(
-                      color: p.stock > 10 ? _green : _orange,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
@@ -354,7 +358,7 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
                     _StepBtn(
                       icon: Icons.remove_rounded,
                       onTap: () => setState(
-                          () => _quantity = (_quantity - 1).clamp(1, p.stock > 0 ? p.stock : 99)),
+                          () => _quantity = (_quantity - 1).clamp(1, 99)),
                       enabled: _quantity > 1,
                     ),
                     SizedBox(
@@ -370,8 +374,8 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
                     _StepBtn(
                       icon: Icons.add_rounded,
                       onTap: () => setState(
-                          () => _quantity = (_quantity + 1).clamp(1, p.stock > 0 ? p.stock : 99)),
-                      enabled: p.stock > 0 && _quantity < p.stock,
+                          () => _quantity = (_quantity + 1).clamp(1, 99)),
+                      enabled: _quantity < 99,
                     ),
                   ],
                 ),
@@ -419,16 +423,7 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
                 child: _InfoTile(
                   icon: Icons.category_rounded,
                   label: 'Category',
-                  value: p.category.isNotEmpty ? p.category : 'General',
-                  iconColor: _orange,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _InfoTile(
-                  icon: Icons.inventory_2_rounded,
-                  label: 'Available Stock',
-                  value: '${p.stock} units',
+                  value: _resolvedCategoryName ?? 'Loading...',
                   iconColor: _orange,
                 ),
               ),

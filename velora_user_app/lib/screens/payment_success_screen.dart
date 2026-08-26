@@ -101,12 +101,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                           ),
                           child: const Icon(Icons.menu_rounded, color: Color(0xFF3A5A2A), size: 20),
                         ),
-                        const Spacer(),
-                        Text('Fresh & Green',
-                          style: GoogleFonts.outfit(
-                            fontSize: 22, fontWeight: FontWeight.w900,
-                            color: const Color(0xFF3A5A2A), letterSpacing: 0.3,
-                          )),
+
                         const Spacer(),
                         Container(
                           width: 36, height: 36,
@@ -464,29 +459,6 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 ],
               ),
             ),
-
-            // ── Bottom Nav ─────────────────────────────────────────────
-            Positioned(
-              bottom: 0, left: 0, right: 0,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 12, offset: const Offset(0, -3))],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _NavItem(icon: Icons.home_outlined, label: 'Home', isActive: false,
-                      onTap: () => Navigator.of(context).popUntil((r) => r.isFirst)),
-                    _NavItem(icon: Icons.grid_view_outlined, label: 'Categories', isActive: false, onTap: () {}),
-                    _NavItem(icon: Icons.receipt_long_rounded, label: 'Orders', isActive: true, onTap: () {}),
-                    _NavItem(icon: Icons.shopping_cart_outlined, label: 'Cart', isActive: false, onTap: () {}),
-                    _NavItem(icon: Icons.person_outline_rounded, label: 'Profile', isActive: false, onTap: () {}),
-                  ],
-                ),
-              ),
-            ),
           ],
         ),
       ),
@@ -494,45 +466,3 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   }
 }
 
-// ─── Bottom Nav Item ──────────────────────────────────────────────────────────
-
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  const _NavItem({required this.icon, required this.label, required this.isActive, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: isActive ? 56 : 44,
-            height: isActive ? 44 : 44,
-            decoration: BoxDecoration(
-              color: isActive ? const Color(0xFF3A5A2A) : Colors.transparent,
-              borderRadius: BorderRadius.circular(isActive ? 14 : 0),
-            ),
-            child: Center(
-              child: Icon(icon,
-                color: isActive ? Colors.white : const Color(0xFF9CA3AF),
-                size: 22),
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(label,
-            style: GoogleFonts.outfit(
-              fontSize: 10, fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
-              color: isActive ? const Color(0xFF3A5A2A) : const Color(0xFF9CA3AF),
-            )),
-        ],
-      ),
-    );
-  }
-}

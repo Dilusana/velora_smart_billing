@@ -132,7 +132,11 @@ class _CategoryPageState extends State<CategoryPage> {
               }
 
               final all = snapshot.data ?? [];
-              final products = all.where((p) => KioskProductRepository.instance.productMatchesCategory(p, widget.category.title)).toList();
+              final products = all.where((p) => KioskProductRepository.instance.productMatchesCategory(
+                p,
+                widget.category.title,
+                categoryId: widget.category.id,
+              )).toList();
 
               if (products.isEmpty) {
                 return Column(

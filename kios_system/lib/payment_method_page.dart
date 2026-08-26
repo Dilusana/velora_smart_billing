@@ -13,6 +13,7 @@ class PaymentMethodPage extends StatefulWidget {
   final int itemCount;
   final String? customerId;
   final String? customerName;
+  final String? customerPhone;
   final String? userName;
 
   const PaymentMethodPage({
@@ -24,6 +25,7 @@ class PaymentMethodPage extends StatefulWidget {
     this.itemCount = 12,
     this.customerId,
     this.customerName,
+    this.customerPhone,
     this.userName,
   });
 
@@ -139,8 +141,6 @@ class _PaymentMethodPageState extends State<PaymentMethodPage>
                               ],
                             ),
                           ),
-                          const SizedBox(height: 14),
-                          _buildPromoBar(),
                         ],
                       ),
                     ),
@@ -206,24 +206,30 @@ class _PaymentMethodPageState extends State<PaymentMethodPage>
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 12,
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
             ],
           ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.shopping_cart_outlined,
-                  color: AppColors.primaryText, size: 18),
-              const SizedBox(width: 6),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: AppColors.brand,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
               Text(
-                '${widget.itemCount} Items',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primaryText,
+                'KIOSK READY',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.grey.shade700,
+                  letterSpacing: 0.6,
                 ),
               ),
             ],
@@ -240,120 +246,64 @@ class _PaymentMethodPageState extends State<PaymentMethodPage>
     required String subtitle,
   }) {
     final isSelected = _selectedMethod == method;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isSelected ? AppColors.accent : Colors.transparent,
-          width: 2.2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isSelected
-                ? AppColors.accent.withValues(alpha: 0.12)
-                : Colors.black.withValues(alpha: 0.05),
-            blurRadius: isSelected ? 20 : 10,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(20),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: () => setState(() => _selectedMethod = method),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppColors.accent.withValues(alpha: 0.12)
-                        : const Color(0xFFF4F6FA),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    icon,
-                    size: 26,
-                    color: isSelected ? AppColors.accent : const Color(0xFF606878),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primaryText,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: Colors.grey.shade500,
-                  ),
-                ),
-              ],
+    return Material(
+      color: isSelected ? AppColors.brand : Colors.white,
+      borderRadius: BorderRadius.circular(24),
+      elevation: isSelected ? 8 : 0,
+      shadowColor: AppColors.brand.withValues(alpha: 0.35),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: () => setState(() => _selectedMethod = method),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: isSelected ? AppColors.brand : const Color(0xFFE2E8F0),
+              width: isSelected ? 2 : 1,
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPromoBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.accent.withValues(alpha: 0.20),
-            AppColors.accent.withValues(alpha: 0.08),
-          ],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.accent.withValues(alpha: 0.25), width: 1),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: AppColors.accent.withValues(alpha: 0.18),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.card_giftcard_rounded,
-                color: AppColors.accent, size: 18),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Text(
-              'Double loyalty points on all transactions today!',
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1B5E20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Colors.white.withValues(alpha: 0.2)
+                      : const Color(0xFFF1F5F9),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  icon,
+                  size: 28,
+                  color: isSelected ? Colors.white : AppColors.brand,
+                ),
               ),
-            ),
+              const SizedBox(height: 14),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: isSelected ? Colors.white : AppColors.primaryText,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: isSelected
+                      ? Colors.white.withValues(alpha: 0.8)
+                      : Colors.grey.shade500,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -613,6 +563,7 @@ class _PaymentMethodPageState extends State<PaymentMethodPage>
         formattedTotal: _fmt(_grandTotal),
         customerId: widget.customerId,
         customerName: widget.customerName,
+        customerPhone: widget.customerPhone,
         userName: widget.userName,
       ),
     );
@@ -628,6 +579,7 @@ class _PaymentProcessingDialog extends StatefulWidget {
   final String formattedTotal;
   final String? customerId;
   final String? customerName;
+  final String? customerPhone;
   final String? userName;
 
   const _PaymentProcessingDialog({
@@ -639,6 +591,7 @@ class _PaymentProcessingDialog extends StatefulWidget {
     required this.formattedTotal,
     this.customerId,
     this.customerName,
+    this.customerPhone,
     this.userName,
   });
 
@@ -684,6 +637,7 @@ class _PaymentProcessingDialogState extends State<_PaymentProcessingDialog>
         paymentMethod: widget.method,
         customerId: widget.customerId,
         customerName: widget.customerName,
+        customerPhone: widget.customerPhone,
         userName: widget.userName,
       );
 
@@ -790,14 +744,30 @@ class _PaymentProcessingDialogState extends State<_PaymentProcessingDialog>
                     color: const Color(0xFFF4F6FA),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
+                  child: const Column(
                     children: [
-                      Icon(Icons.cloud_done_rounded, color: AppColors.brand, size: 18),
-                      SizedBox(width: 8),
-                      Text(
-                        'Synced to Admin Dashboard',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.brand),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.cloud_done_rounded, color: AppColors.brand, size: 18),
+                          SizedBox(width: 8),
+                          Text(
+                            'Synced to Admin Dashboard',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.brand),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 6),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.sms_outlined, color: AppColors.brand, size: 14),
+                          SizedBox(width: 6),
+                          Text(
+                            'Confirmation SMS pending / sent',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Color(0xFF6B7280)),
+                          ),
+                        ],
                       ),
                     ],
                   ),

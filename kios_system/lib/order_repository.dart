@@ -1,13 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'cart_item.dart';
 import 'cart_database.dart';
+import 'sms_service.dart';
 
 class KioskOrderRepository {
   static final KioskOrderRepository instance = KioskOrderRepository._();
 
   KioskOrderRepository._();
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
 
   CollectionReference get _ordersRef => _firestore.collection('orders');
   CollectionReference get _paymentsRef => _firestore.collection('payments');
@@ -28,8 +29,10 @@ class KioskOrderRepository {
     required String paymentMethod,
     String? customerId,
     String? customerName,
+    String? customerPhone,
     String? userName,
     String? branchName,
+    String deliveryType = 'pickup',
   }) async {
     final String orderDocId = 'order_${DateTime.now().millisecondsSinceEpoch}';
     final String cId = (customerId != null && customerId.trim().isNotEmpty)
@@ -38,6 +41,7 @@ class KioskOrderRepository {
     final String cName = (customerName != null && customerName.trim().isNotEmpty)
         ? customerName.trim()
         : 'Kiosk Customer';
+    final String cPhone = (customerPhone != null) ? customerPhone.trim() : '';
     final String user = (userName != null && userName.trim().isNotEmpty)
         ? userName.trim()
         : 'Kiosk User';
@@ -64,8 +68,10 @@ class KioskOrderRepository {
     final String pMethodClean = _normalizePaymentMethod(paymentMethod);
 
     final Map<String, dynamic> orderData = {
+      'orderId': orderDocId,
       'customerId': cId,
       'customerName': cName,
+      'customerPhone': cPhone,
       'users': user,
       'items': orderItems,
       'subtotal': subtotal,
@@ -76,7 +82,10 @@ class KioskOrderRepository {
       'paymentStatus': 'paid',
       'status': 'Processing',
       'ordersource': 'Kiosk',
+      'deliveryType': deliveryType,
+      'deliverytype': deliveryType,
       'branch': branch,
+      'smsSent': false,
       'createdAt': FieldValue.serverTimestamp(),
     };
 
@@ -145,6 +154,15 @@ class KioskOrderRepository {
 
     // 5. Clear SQLite cart
     await CartDatabase.instance.clearCart();
+
+    // 6. Trigger Text.lk SMS dispatch asynchronously (non-blocking)
+    if (cPhone.isNotEmpty) {
+      SmsService.instance.sendOrderSms(
+        orderDocId: orderDocId,
+        customerPhone: cPhone,
+        totalAmount: total,
+      );
+    }
 
     return orderDocId;
   }

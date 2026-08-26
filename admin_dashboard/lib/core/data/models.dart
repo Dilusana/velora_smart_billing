@@ -455,6 +455,7 @@ class OrderModel extends Equatable {
   final String id;
   final String customerId;
   final String customerName;
+  final String customerPhone;
   final List<OrderItem> items;
   final double subtotal;
   final double discount;
@@ -462,14 +463,20 @@ class OrderModel extends Equatable {
   final String paymentMethod;
   final String paymentStatus;
   final String status;
+  final String deliveryType;
   final String branch;
   final String branchId;
+  final bool smsSent;
+  final DateTime? smsSentAt;
+  final String? smsId;
+  final String? smsError;
   final DateTime createdAt;
 
   const OrderModel({
     required this.id,
     required this.customerId,
     required this.customerName,
+    this.customerPhone = '',
     required this.items,
     this.subtotal = 0.0,
     this.discount = 0.0,
@@ -477,8 +484,13 @@ class OrderModel extends Equatable {
     required this.paymentMethod,
     this.paymentStatus = '',
     required this.status,
+    this.deliveryType = 'delivery',
     required this.branch,
     this.branchId = '',
+    this.smsSent = false,
+    this.smsSentAt,
+    this.smsId,
+    this.smsError,
     required this.createdAt,
   });
 
@@ -486,6 +498,7 @@ class OrderModel extends Equatable {
     String? id,
     String? customerId,
     String? customerName,
+    String? customerPhone,
     List<OrderItem>? items,
     double? subtotal,
     double? discount,
@@ -493,14 +506,20 @@ class OrderModel extends Equatable {
     String? paymentMethod,
     String? paymentStatus,
     String? status,
+    String? deliveryType,
     String? branch,
     String? branchId,
+    bool? smsSent,
+    DateTime? smsSentAt,
+    String? smsId,
+    String? smsError,
     DateTime? createdAt,
   }) {
     return OrderModel(
       id: id ?? this.id,
       customerId: customerId ?? this.customerId,
       customerName: customerName ?? this.customerName,
+      customerPhone: customerPhone ?? this.customerPhone,
       items: items ?? this.items,
       subtotal: subtotal ?? this.subtotal,
       discount: discount ?? this.discount,
@@ -508,8 +527,13 @@ class OrderModel extends Equatable {
       paymentMethod: paymentMethod ?? this.paymentMethod,
       paymentStatus: paymentStatus ?? this.paymentStatus,
       status: status ?? this.status,
+      deliveryType: deliveryType ?? this.deliveryType,
       branch: branch ?? this.branch,
       branchId: branchId ?? this.branchId,
+      smsSent: smsSent ?? this.smsSent,
+      smsSentAt: smsSentAt ?? this.smsSentAt,
+      smsId: smsId ?? this.smsId,
+      smsError: smsError ?? this.smsError,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -519,6 +543,7 @@ class OrderModel extends Equatable {
       'id': id,
       'customerId': customerId,
       'customerName': customerName,
+      'customerPhone': customerPhone,
       'items': items.map((x) => x.toMap()).toList(),
       'subtotal': subtotal,
       'discount': discount,
@@ -526,8 +551,14 @@ class OrderModel extends Equatable {
       'paymentMethod': paymentMethod,
       'paymentStatus': paymentStatus,
       'status': status,
+      'deliveryType': deliveryType,
+      'deliverytype': deliveryType,
       'branch': branch,
       'branchId': branchId,
+      'smsSent': smsSent,
+      'smsSentAt': smsSentAt?.toIso8601String(),
+      'smsId': smsId,
+      'smsError': smsError,
       'createdAt': createdAt.toIso8601String(),
     };
   }
@@ -577,11 +608,19 @@ class OrderModel extends Equatable {
 
     final pStatus = (map['paymentStatus'] ?? '').toString();
     final pMethod = (map['paymentMethod'] ?? (pStatus.isNotEmpty ? pStatus : 'Cash')).toString();
+    final delType = (map['deliveryType'] ?? map['deliverytype'] ?? (map['deliveryFee'] != null && (map['deliveryFee'] as num) > 0 ? 'delivery' : 'pickup')).toString();
+
+    final bool smsSent = (map['smsSent'] as bool?) ?? false;
+    final String cPhone = (map['customerPhone'] ?? map['phone'] ?? '').toString();
+    final String? smsId = map['smsId'] as String?;
+    final String? smsError = map['smsError'] as String?;
+    final DateTime? smsSentAt = map['smsSentAt'] != null ? _parseDateTime(map['smsSentAt']) : null;
 
     return OrderModel(
       id: rawId,
       customerId: cId.isEmpty ? 'cust-1' : cId,
       customerName: cName,
+      customerPhone: cPhone,
       items: parsedItems,
       subtotal: rawSubtotal,
       discount: rawDiscount,
@@ -589,15 +628,20 @@ class OrderModel extends Equatable {
       paymentMethod: pMethod,
       paymentStatus: pStatus,
       status: (map['status'] ?? 'pending').toString(),
+      deliveryType: delType,
       branch: bName,
       branchId: bId,
+      smsSent: smsSent,
+      smsSentAt: smsSentAt,
+      smsId: smsId,
+      smsError: smsError,
       createdAt: _parseDateTime(map['createdAt']),
     );
   }
 
   @override
   List<Object?> get props => [
-        id, customerId, customerName, items, subtotal, discount, total, paymentMethod, paymentStatus, status, branch, branchId, createdAt
+        id, customerId, customerName, customerPhone, items, subtotal, discount, total, paymentMethod, paymentStatus, status, deliveryType, branch, branchId, smsSent, smsSentAt, smsId, smsError, createdAt
       ];
 }
 
@@ -1740,10 +1784,13 @@ class EmployeeModel extends Equatable {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'ID': id,
       'name': name,
+      'full_name': name,
       'role': role,
       'branch': branch,
       'phone': phone,
+      'phone_number': phone,
       'email': email,
       'status': status,
       'hireDate': hireDate.toIso8601String(),
@@ -1752,18 +1799,43 @@ class EmployeeModel extends Equatable {
     };
   }
 
-  factory EmployeeModel.fromMap(Map<String, dynamic> map) {
+  factory EmployeeModel.fromMap(Map<String, dynamic> map, {String? docId}) {
+    final idVal = (map['id'] ?? map['ID'] ?? docId ?? '').toString();
+    final nameVal = (map['name'] ?? map['full_name'] ?? map['fullName'] ?? map['userName'] ?? map['username'] ?? '').toString();
+    final emailVal = (map['email'] ?? '').toString();
+    final roleVal = (map['role'] ?? map['designation'] ?? map['userType'] ?? 'Staff').toString();
+    final branchVal = (map['branch'] ?? map['store'] ?? map['assigned_zone'] ?? 'Main Branch').toString();
+    final phoneVal = (map['phone'] ?? map['phone_number'] ?? map['phoneNumber'] ?? map['mobile'] ?? '').toString();
+    final statusVal = (map['status'] ?? map['attendance_status'] ?? 'Active').toString();
+    
+    DateTime hire;
+    if (map['hireDate'] != null) {
+      hire = _parseDateTime(map['hireDate']);
+    } else if (map['created_at'] != null) {
+      hire = _parseDateTime(map['created_at']);
+    } else {
+      hire = DateTime.now();
+    }
+
+    final double sal = map['salary'] != null 
+        ? _parsePrice(map['salary']) 
+        : _parsePrice(map['earnings_today']);
+
+    final perms = map['permissions'] != null 
+        ? List<String>.from(map['permissions']) 
+        : <String>['sales'];
+
     return EmployeeModel(
-      id: map['id'] ?? '',
-      name: map['name'] ?? '',
-      role: map['role'] ?? '',
-      branch: map['branch'] ?? '',
-      phone: map['phone'] ?? '',
-      email: map['email'] ?? '',
-      status: map['status'] ?? '',
-      hireDate: DateTime.tryParse(map['hireDate'] ?? '') ?? DateTime.now(),
-      salary: (map['salary'] ?? 0.0).toDouble(),
-      permissions: List<String>.from(map['permissions'] ?? []),
+      id: idVal,
+      name: nameVal.isNotEmpty ? nameVal : (emailVal.isNotEmpty ? emailVal.split('@').first : 'Employee'),
+      role: roleVal.isNotEmpty ? roleVal : 'Staff',
+      branch: branchVal.isNotEmpty ? branchVal : 'Main Branch',
+      phone: phoneVal,
+      email: emailVal,
+      status: statusVal.isNotEmpty ? statusVal : 'Active',
+      hireDate: hire,
+      salary: sal,
+      permissions: perms,
     );
   }
 

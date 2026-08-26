@@ -74,7 +74,11 @@ class _AllDealsPageState extends State<AllDealsPage> {
     // Category filter
     if (widget.category != null) {
       list = list.where((p) {
-        return KioskProductRepository.instance.productMatchesCategory(p, widget.category!.title);
+        return KioskProductRepository.instance.productMatchesCategory(
+          p,
+          widget.category!.title,
+          categoryId: widget.category!.id,
+        );
       }).toList();
     }
 

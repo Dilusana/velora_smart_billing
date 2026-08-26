@@ -51,13 +51,13 @@ class _KpiCardState extends State<KpiCard> {
           try {
             context.go(widget.targetRoute);
           } catch (e) {
-            print("Navigation error: \$e");
+            debugPrint("Navigation error: $e");
           }
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           width: 260,
-          transform: Matrix4.identity()..scale(_isHovered ? 1.02 : 1.0),
+          transform: Matrix4.diagonal3Values(_isHovered ? 1.02 : 1.0, _isHovered ? 1.02 : 1.0, 1.0),
           decoration: BoxDecoration(
             color: isDark ? AppColors.bgDarkCard : AppColors.bgCard,
             borderRadius: BorderRadius.circular(12),
@@ -66,7 +66,7 @@ class _KpiCardState extends State<KpiCard> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(_isHovered ? 0.1 : 0.05),
+                color: Colors.black.withValues(alpha: _isHovered ? 0.1 : 0.05),
                 blurRadius: _isHovered ? 12 : 8,
                 offset: const Offset(0, 4),
               ),
@@ -82,7 +82,7 @@ class _KpiCardState extends State<KpiCard> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: widget.accentColor.withOpacity(0.15),
+                      color: widget.accentColor.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(widget.icon, color: widget.accentColor, size: 24),

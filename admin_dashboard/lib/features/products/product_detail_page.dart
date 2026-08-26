@@ -155,7 +155,7 @@ class ProductDetailPage extends ConsumerWidget {
                                   borderRadius: BorderRadius.circular(16),
                                 ),
                                 child: Text(
-                                  category?.name ?? 'Unknown',
+                                  category?.name ?? (product.category.isNotEmpty ? product.category : 'Uncategorized'),
                                   style: const TextStyle(
                                       color: AppColors.primary,
                                       fontWeight: FontWeight.bold),

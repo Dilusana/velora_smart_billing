@@ -1,7 +1,39 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/cart_service.dart';
+import '../services/firebase_auth_service.dart';
+import '../repositories/order_repository.dart';
+import '../repositories/user_repository.dart';
 import 'payment_success_screen.dart';
+
+// ─── Credit Card Model ────────────────────────────────────────────────────────
+
+class CreditCardModel {
+  final String id;
+  final String cardholderName;
+  final String cardNumber;
+  final String expiryDate;
+  final String cvv;
+  final String cardType;
+
+  const CreditCardModel({
+    required this.id,
+    required this.cardholderName,
+    required this.cardNumber,
+    required this.expiryDate,
+    required this.cvv,
+    required this.cardType,
+  });
+
+  String get last4 {
+    final clean = cardNumber.replaceAll(' ', '').replaceAll('-', '');
+    return clean.length >= 4 ? clean.substring(clean.length - 4) : '4242';
+  }
+
+  String get maskedNumber => '•••• •••• •••• $last4';
+}
 
 // ─── Checkout Screen ──────────────────────────────────────────────────────────
 
@@ -15,109 +47,370 @@ class CheckoutScreen extends StatefulWidget {
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
   // Form controllers
-  final _nameCtrl = TextEditingController(text: 'John Doe');
-  final _phoneCtrl = TextEditingController(text: '+1(555)000-0000');
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+
+  StreamSubscription<UserProfile>? _userSub;
+  String _customerAddress = '742 Evergreen Terrace, Springfield';
 
   // State
   bool _isPickup = true;
-  int _selectedPayment = 0; // 0=Visa, 1=Apple Pay, 2=G-Pay
+  int _selectedPayment = 0; // 0=Card, 1=Cash, 2=G-Pay
   bool _summaryExpanded = true;
+  bool _isSubmitting = false;
 
-  // Demo items
-  static const _items = [
-    _CheckoutItem(name: 'Organic Strawberries', qty: 1, unitPrice: 4.99,
-        imagePath: 'assests/veg_fruits.png', fallbackIcon: Icons.eco_rounded),
-    _CheckoutItem(name: 'Pure Green Juice', qty: 2, unitPrice: 6.50,
-        imagePath: 'assests/beverages.png', fallbackIcon: Icons.local_drink_rounded),
-    _CheckoutItem(name: 'Artisan Sourdough', qty: 1, unitPrice: 5.25,
-        imagePath: 'assests/sourdough_product.jpg', fallbackIcon: Icons.breakfast_dining_rounded),
+  final List<CreditCardModel> _savedCards = [
+    const CreditCardModel(
+      id: 'card_1',
+      cardholderName: 'Alex Johnson',
+      cardNumber: '4532 7512 8901 4242',
+      expiryDate: '12/26',
+      cvv: '123',
+      cardType: 'VISA',
+    ),
   ];
+  int _selectedCardIndex = 0;
 
-  double get _subtotal => _items.fold(0.0, (s, i) => s + i.total);
-  double get _tax => _subtotal * 0.08;
-  double get _discount => 2.00;
-  double get _total => _subtotal + _tax - _discount;
+  @override
+  void initState() {
+    super.initState();
+    final uid = FirebaseAuthService.instance.currentUser?.uid ?? UserRepository.defaultUserId;
+    _userSub = UserRepository.instance.getUserProfileStream(userId: uid).listen((profile) {
+      if (mounted) {
+        setState(() {
+          _nameCtrl.text = profile.name;
+          _phoneCtrl.text = profile.phone;
+          if (profile.address.isNotEmpty) {
+            _customerAddress = profile.address;
+          }
+        });
+      }
+    });
+  }
 
   @override
   void dispose() {
+    _userSub?.cancel();
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     super.dispose();
   }
 
+  List<_CheckoutItem> get _checkoutItems {
+    final cartItems = CartService.instance.items;
+    if (cartItems.isEmpty) {
+      return [
+        _CheckoutItem(
+          name: 'Fresh Items',
+          qty: 1,
+          unitPrice: widget.cartTotal > 0 ? widget.cartTotal : 23.10,
+          fallbackIcon: Icons.shopping_basket_rounded,
+        ),
+      ];
+    }
+    return cartItems.map((i) => _CheckoutItem(
+      name: i.title,
+      qty: i.quantity,
+      unitPrice: i.price,
+      imagePath: i.imageUrl.isNotEmpty ? i.imageUrl : null,
+      fallbackIcon: Icons.shopping_basket_rounded,
+    )).toList();
+  }
+
+  double get _subtotal {
+    final s = CartService.instance.subtotal;
+    return s > 0 ? s : widget.cartTotal;
+  }
+
+  double get _deliveryFee => _isPickup ? 0.0 : 300.0;
+  double get _discount => 0.0;
+  double get _total => _subtotal + _deliveryFee - _discount;
+
+  Future<void> _processCheckout() async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+
+    HapticFeedback.mediumImpact();
+
+    final paymentMethods = ['Card', 'Cash', 'Google Pay'];
+    final pMethod = paymentMethods[_selectedPayment % paymentMethods.length];
+
+    final cartItems = CartService.instance.items;
+
+    String orderId = 'ORD-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+
+    try {
+      if (cartItems.isNotEmpty) {
+        orderId = await OrderRepository.instance.submitOrder(
+          items: cartItems,
+          subtotal: _subtotal,
+          discount: _discount,
+          deliveryFee: _deliveryFee,
+          total: _total,
+          paymentMethod: pMethod,
+          customerId: UserRepository.defaultUserId,
+          customerName: _nameCtrl.text.isNotEmpty ? _nameCtrl.text : 'Alex Johnson',
+          deliveryAddress: _isPickup ? 'Store Pickup (Main Branch)' : _customerAddress,
+          deliveryType: _isPickup ? 'pickup' : 'delivery',
+          phone: _phoneCtrl.text,
+        );
+      }
+    } catch (e) {
+      debugPrint('Order submit error: $e');
+    }
+
+    if (!mounted) return;
+
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        pageBuilder: (ctx, anim, _) => PaymentSuccessScreen(
+          orderId: orderId,
+          totalPaid: _total,
+        ),
+        transitionsBuilder: (ctx, anim, _, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+          child: child,
+        ),
+        transitionDuration: const Duration(milliseconds: 400),
+      ),
+    );
+  }
+
+  void _showAddCardDialog() {
+    final nameCtrl = TextEditingController(text: _nameCtrl.text.isNotEmpty ? _nameCtrl.text : 'Alex Johnson');
+    final numberCtrl = TextEditingController();
+    final expiryCtrl = TextEditingController();
+    final cvvCtrl = TextEditingController();
+    String cardType = 'VISA';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              padding: EdgeInsets.only(
+                top: 20,
+                left: 20,
+                right: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE5E7EB),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const Icon(Icons.credit_card_rounded, color: Color(0xFF1A2D5A), size: 24),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Add Debit / Credit Card',
+                          style: GoogleFonts.outfit(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF111827),
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, color: Color(0xFF6B7280), size: 20),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    Text(
+                      'CARD TYPE',
+                      style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF9CA3AF), letterSpacing: 0.7),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: ['VISA', 'MASTERCARD', 'AMEX'].map((type) {
+                        final isSel = cardType == type;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text(type),
+                            selected: isSel,
+                            selectedColor: const Color(0xFF1A2D5A),
+                            backgroundColor: const Color(0xFFF3F4F6),
+                            labelStyle: GoogleFonts.outfit(
+                              color: isSel ? Colors.white : const Color(0xFF374151),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                            onSelected: (sel) {
+                              if (sel) {
+                                setModalState(() => cardType = type);
+                              }
+                            },
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 14),
+
+                    _FormField(label: 'CARDHOLDER NAME', controller: nameCtrl, icon: Icons.person_outline_rounded),
+                    const SizedBox(height: 14),
+
+                    _FormField(
+                      label: 'CARD NUMBER',
+                      controller: numberCtrl,
+                      icon: Icons.credit_card_outlined,
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 14),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _FormField(
+                            label: 'EXPIRY DATE (MM/YY)',
+                            controller: expiryCtrl,
+                            icon: Icons.calendar_today_outlined,
+                            keyboardType: TextInputType.datetime,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _FormField(
+                            label: 'CVV',
+                            controller: cvvCtrl,
+                            icon: Icons.lock_outline_rounded,
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          if (numberCtrl.text.trim().isEmpty || nameCtrl.text.trim().isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Please enter cardholder name and card number.', style: GoogleFonts.outfit(color: Colors.white)),
+                                backgroundColor: const Color(0xFFEF4444),
+                              ),
+                            );
+                            return;
+                          }
+                          final newCard = CreditCardModel(
+                            id: 'card_${DateTime.now().millisecondsSinceEpoch}',
+                            cardholderName: nameCtrl.text.trim(),
+                            cardNumber: numberCtrl.text.trim(),
+                            expiryDate: expiryCtrl.text.trim().isNotEmpty ? expiryCtrl.text.trim() : '12/28',
+                            cvv: cvvCtrl.text.trim().isNotEmpty ? cvvCtrl.text.trim() : '123',
+                            cardType: cardType,
+                          );
+
+                          setState(() {
+                            _savedCards.add(newCard);
+                            _selectedCardIndex = _savedCards.length - 1;
+                            _selectedPayment = 0;
+                          });
+
+                          Navigator.of(context).pop();
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Card added successfully!', style: GoogleFonts.outfit(color: Colors.white)),
+                              backgroundColor: const Color(0xFF3A5A2A),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1A2D5A),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Text(
+                          'Save & Select Card',
+                          style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F2E8),
+      backgroundColor: const Color(0xFFF9F9F6),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF111827), size: 18),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text(
+          'Checkout',
+          style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w800, color: const Color(0xFF111827)),
+        ),
+        actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.all(8),
+            decoration: const BoxDecoration(color: Color(0xFFEEF5C8), shape: BoxShape.circle),
+            child: const Icon(Icons.shield_outlined, size: 18, color: Color(0xFF3A5A2A)),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Stack(
           children: [
             CustomScrollView(
               slivers: [
-                // ── App Bar ──────────────────────────────────────────────
-                SliverAppBar(
-                  backgroundColor: const Color(0xFFF5F2E8),
-                  elevation: 0,
-                  floating: true,
-                  snap: true,
-                  automaticallyImplyLeading: false,
-                  toolbarHeight: 58,
-                  title: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      children: [
-                        GestureDetector(
-                          onTap: () => Navigator.of(context).pop(),
-                          child: Container(
-                            width: 36, height: 36,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(10),
-                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))],
-                            ),
-                            child: const Icon(Icons.arrow_back_ios_new_rounded, size: 16, color: Color(0xFF3A5A2A)),
-                          ),
-                        ),
-                        const Spacer(),
-                        Text('Checkout',
-                          style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.w800, color: const Color(0xFF111827))),
-                        const Spacer(),
-                        Container(
-                          width: 36, height: 36,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(colors: [Color(0xFFCEE847), Color(0xFF8DC63F)]),
-                          ),
-                          child: const Icon(Icons.person_rounded, color: Color(0xFF1A2D5A), size: 20),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                const SliverToBoxAdapter(child: _CheckoutStepper(currentStep: 2)),
+                const SliverToBoxAdapter(child: SizedBox(height: 14)),
 
-                // ── Step Indicator ───────────────────────────────────────
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 18),
-                    child: _buildStepIndicator(),
-                  ),
-                ),
-
-                // ── Customer Information ─────────────────────────────────
+                // ── Customer Information ──────────────────────────────────
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
                     child: _buildSection(
-                      icon: Icons.person_rounded,
+                      icon: Icons.person_outline_rounded,
                       iconBg: const Color(0xFFEEF5C8),
                       iconColor: const Color(0xFF3A5A2A),
                       title: 'Customer Information',
                       child: Column(
                         children: [
                           _FormField(label: 'FULL NAME', controller: _nameCtrl, icon: Icons.person_outline_rounded),
-                          const SizedBox(height: 14),
-                          _FormField(label: 'PHONE NUMBER', controller: _phoneCtrl, icon: Icons.phone_outlined,
-                            keyboardType: TextInputType.phone),
+                          const SizedBox(height: 12),
+                          _FormField(label: 'PHONE NUMBER', controller: _phoneCtrl, icon: Icons.phone_outlined, keyboardType: TextInputType.phone),
                         ],
                       ),
                     ),
@@ -129,39 +422,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
                     child: _buildSection(
-                      icon: Icons.local_shipping_rounded,
-                      iconBg: const Color(0xFFDCFCE7),
-                      iconColor: const Color(0xFF16A34A),
+                      icon: Icons.local_shipping_outlined,
+                      iconBg: const Color(0xFFE0F2FE),
+                      iconColor: const Color(0xFF0369A1),
                       title: 'Fulfillment Method',
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Toggle
-                          Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF0F0E8),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(child: _ToggleBtn(
-                                  label: 'Pickup',
-                                  icon: Icons.store_rounded,
-                                  isSelected: _isPickup,
-                                  onTap: () => setState(() => _isPickup = true),
-                                )),
-                                Expanded(child: _ToggleBtn(
-                                  label: 'Delivery',
-                                  icon: Icons.delivery_dining_rounded,
-                                  isSelected: !_isPickup,
-                                  onTap: () => setState(() => _isPickup = false),
-                                )),
-                              ],
-                            ),
+                          _FulfillmentToggle(
+                            isPickup: _isPickup,
+                            onChanged: (val) => setState(() => _isPickup = val),
                           ),
                           const SizedBox(height: 12),
-                          // Address info
                           AnimatedSwitcher(
                             duration: const Duration(milliseconds: 250),
                             child: _isPickup
@@ -173,7 +444,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 : _FulfillmentInfo(
                                     key: const ValueKey('delivery'),
                                     icon: Icons.home_rounded,
-                                    text: '123 Green Lane, Freshville. Estimated: 35–45 mins.',
+                                    text: '$_customerAddress. Estimated: 35–45 mins. (Delivery Fee: Rs 300.00)',
                                   ),
                           ),
                         ],
@@ -196,15 +467,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           // Credit card
                           GestureDetector(
                             onTap: () => setState(() => _selectedPayment = 0),
-                            child: _CreditCard(isSelected: _selectedPayment == 0),
+                            child: _CreditCard(
+                              isSelected: _selectedPayment == 0,
+                              card: _savedCards[_selectedCardIndex],
+                            ),
                           ),
                           const SizedBox(height: 12),
-                          // Apple Pay + G-Pay row
+                          // Cash + G-Pay row
                           Row(
                             children: [
                               Expanded(child: _PaymentOption(
-                                label: 'Apple Pay',
-                                icon: Icons.apple_rounded,
+                                label: 'Cash',
+                                icon: Icons.local_atm_rounded,
                                 isSelected: _selectedPayment == 1,
                                 onTap: () => setState(() => _selectedPayment = 1),
                               )),
@@ -220,7 +494,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           const SizedBox(height: 10),
                           // Add new
                           GestureDetector(
-                            onTap: () {},
+                            onTap: _showAddCardDialog,
                             child: Container(
                               height: 46,
                               decoration: BoxDecoration(
@@ -263,7 +537,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               color: const Color(0xFFEEF5C8),
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            child: Text('${_items.length} Items',
+                            child: Text('${_checkoutItems.length} Items',
                               style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF3A5A2A))),
                           ),
                           const SizedBox(width: 6),
@@ -282,16 +556,27 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         crossFadeState: _summaryExpanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
                         firstChild: Column(
                           children: [
-                            ..._items.map((item) => _OrderSummaryRow(item: item)),
+                            ..._checkoutItems.map((item) => _OrderSummaryRow(item: item)),
+
                             const SizedBox(height: 10),
                             Divider(color: const Color(0xFFE5E7EB), height: 1),
                             const SizedBox(height: 10),
                             _SummaryLine(label: 'Subtotal', value: 'Rs ${_subtotal.toStringAsFixed(2)}'),
                             const SizedBox(height: 5),
-                            _SummaryLine(label: 'Tax (8%)', value: 'Rs ${_tax.toStringAsFixed(2)}'),
-                            const SizedBox(height: 5),
-                            _SummaryLine(label: 'Promo Discount', value: '-\$${_discount.toStringAsFixed(2)}',
-                              valueColor: const Color(0xFF3A5A2A), labelColor: const Color(0xFF3A5A2A)),
+                            _SummaryLine(
+                              label: 'Delivery Fee',
+                              value: _isPickup ? 'Free (Pickup)' : 'Rs ${_deliveryFee.toStringAsFixed(2)}',
+                              valueColor: _isPickup ? const Color(0xFF3A5A2A) : const Color(0xFF111827),
+                            ),
+                            if (_discount > 0) ...[
+                              const SizedBox(height: 5),
+                              _SummaryLine(
+                                label: 'Promo Discount',
+                                value: '-Rs ${_discount.toStringAsFixed(2)}',
+                                valueColor: const Color(0xFF3A5A2A),
+                                labelColor: const Color(0xFF3A5A2A),
+                              ),
+                            ],
                             const SizedBox(height: 12),
                             Divider(color: const Color(0xFFE5E7EB), height: 1),
                             const SizedBox(height: 12),
@@ -335,162 +620,101 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  // ─── Step Indicator ──────────────────────────────────────────────────────────
-
-  Widget _buildStepIndicator() {
-    const steps = ['INFO', 'SUMMARY', 'PAYMENT'];
-    const activeSteps = [true, true, false];
-
-    return Row(
-      children: List.generate(steps.length * 2 - 1, (i) {
-        if (i.isOdd) {
-          // Connector line
-          final leftDone = activeSteps[i ~/ 2];
-          return Expanded(
-            child: Container(
-              height: 2,
-              decoration: BoxDecoration(
-                color: leftDone ? const Color(0xFFCEE847) : const Color(0xFFE5E7EB),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          );
-        }
-        final idx = i ~/ 2;
-        final isActive = activeSteps[idx];
-        return Column(
-          children: [
-            Container(
-              width: 34, height: 34,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isActive ? const Color(0xFFCEE847) : const Color(0xFFF3F4F6),
-                border: isActive ? null : Border.all(color: const Color(0xFFD1D5DB), width: 1.5),
-                boxShadow: isActive
-                    ? [BoxShadow(color: const Color(0xFFCEE847).withValues(alpha: 0.4), blurRadius: 8, offset: const Offset(0, 2))]
-                    : null,
-              ),
-              child: Center(
-                child: Text('${idx + 1}',
-                  style: GoogleFonts.outfit(
-                    fontSize: 14, fontWeight: FontWeight.w900,
-                    color: isActive ? const Color(0xFF1A2D5A) : const Color(0xFF9CA3AF),
-                  )),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(steps[idx],
-              style: GoogleFonts.outfit(
-                fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.5,
-                color: isActive ? const Color(0xFF3A5A2A) : const Color(0xFF9CA3AF),
-              )),
-          ],
-        );
-      }),
-    );
-  }
-
-  // ─── Card Section wrapper ─────────────────────────────────────────────────────
-
   Widget _buildSection({
     required IconData icon,
     required Color iconBg,
     required Color iconColor,
     required String title,
-    required Widget child,
     Widget? trailing,
+    required Widget child,
   }) {
     return Container(
-      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.055), blurRadius: 12, offset: const Offset(0, 3))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                width: 34, height: 34,
-                decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(9)),
-                child: Icon(icon, color: iconColor, size: 18),
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(10)),
+                child: Icon(icon, size: 18, color: iconColor),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(title,
-                  style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF111827))),
+                child: Text(
+                  title,
+                  style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF111827)),
+                ),
               ),
-              if (trailing != null) trailing,
+              ?trailing,
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           child,
         ],
       ),
     );
   }
 
-  // ─── Bottom Confirm Bar ────────────────────────────────────────────────────────
-
   Widget _buildConfirmBar(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F2E8),
-        border: Border(top: BorderSide(color: Colors.black.withValues(alpha: 0.06))),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          GestureDetector(
-            onTap: () {
-              HapticFeedback.mediumImpact();
-              Navigator.of(context).push(
-                PageRouteBuilder(
-                  pageBuilder: (ctx, anim, _) => PaymentSuccessScreen(
-                    orderId: 'SM-8829',
-                    totalPaid: _total,
-                  ),
-                  transitionsBuilder: (ctx, anim, _, child) => FadeTransition(
-                    opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
-                    child: child,
-                  ),
-                  transitionDuration: const Duration(milliseconds: 400),
-                ),
-              );
-            },
-            child: Container(
-              height: 54,
-              decoration: BoxDecoration(
-                color: const Color(0xFFCEE847),
-                borderRadius: BorderRadius.circular(30),
-                boxShadow: [BoxShadow(color: const Color(0xFFCEE847).withValues(alpha: 0.50), blurRadius: 18, offset: const Offset(0, 6))],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Confirm Payment',
-                    style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFF1A2D5A))),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.chevron_right_rounded, color: Color(0xFF1A2D5A)),
-                  const Icon(Icons.chevron_right_rounded, color: Color(0xFF1A2D5A), size: 18),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.lock_rounded, size: 11, color: Color(0xFF9CA3AF)),
-              const SizedBox(width: 4),
-              Text('Secure 256-bit SSL encrypted payment',
-                style: GoogleFonts.outfit(fontSize: 10, color: const Color(0xFF9CA3AF))),
-            ],
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
           ),
         ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _isSubmitting ? null : _processCheckout,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFCEE847),
+                  foregroundColor: const Color(0xFF1A2D5A),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: _isSubmitting
+                    ? const SizedBox(
+                        width: 22, height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFF1A2D5A)),
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('Confirm Payment',
+                            style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFF1A2D5A))),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF1A2D5A)),
+                        ],
+                      ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -505,7 +729,7 @@ class _CheckoutItem {
   final String? imagePath;
   final IconData fallbackIcon;
 
-  const _CheckoutItem({
+  _CheckoutItem({
     required this.name,
     required this.qty,
     required this.unitPrice,
@@ -516,19 +740,90 @@ class _CheckoutItem {
   double get total => qty * unitPrice;
 }
 
-// ─── Form Field ───────────────────────────────────────────────────────────────
+// ─── Stepper Widget ───────────────────────────────────────────────────────────
+
+class _CheckoutStepper extends StatelessWidget {
+  final int currentStep;
+  const _CheckoutStepper({required this.currentStep});
+
+  @override
+  Widget build(BuildContext context) {
+    const steps = ['Cart', 'Summary', 'Payment'];
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Row(
+        children: List.generate(steps.length * 2 - 1, (i) {
+          if (i.isOdd) {
+            final stepIdx = i ~/ 2;
+            final isDone = stepIdx < currentStep;
+            return Expanded(
+              child: Container(
+                height: 2,
+                color: isDone ? const Color(0xFFCEE847) : const Color(0xFFE5E7EB),
+              ),
+            );
+          }
+          final stepIdx = i ~/ 2;
+          final isCurrent = stepIdx == currentStep;
+          final isDone = stepIdx < currentStep;
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 24, height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isDone || isCurrent ? const Color(0xFFCEE847) : const Color(0xFFF3F4F6),
+                  border: Border.all(
+                    color: isCurrent ? const Color(0xFF3A5A2A) : Colors.transparent,
+                    width: 2,
+                  ),
+                ),
+                child: Center(
+                  child: isDone
+                      ? const Icon(Icons.check_rounded, size: 14, color: Color(0xFF3A5A2A))
+                      : Text(
+                          '${stepIdx + 1}',
+                          style: GoogleFonts.outfit(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: isCurrent ? const Color(0xFF3A5A2A) : const Color(0xFF9CA3AF),
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                steps[stepIdx].toUpperCase(),
+                style: GoogleFonts.outfit(
+                  fontSize: 9,
+                  fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w500,
+                  color: isCurrent ? const Color(0xFF3A5A2A) : const Color(0xFF9CA3AF),
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+}
+
+// ─── Form Field Helper ────────────────────────────────────────────────────────
 
 class _FormField extends StatelessWidget {
   final String label;
   final TextEditingController controller;
   final IconData icon;
-  final TextInputType? keyboardType;
+  final TextInputType keyboardType;
 
   const _FormField({
     required this.label,
     required this.controller,
     required this.icon,
-    this.keyboardType,
+    this.keyboardType = TextInputType.text,
   });
 
   @override
@@ -536,32 +831,24 @@ class _FormField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-          style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w700,
-            color: const Color(0xFF9CA3AF), letterSpacing: 0.7)),
-        const SizedBox(height: 6),
-        Container(
-          height: 48,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF9F9F6),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE5E7EB)),
-          ),
-          child: Row(
-            children: [
-              const SizedBox(width: 12),
-              Icon(icon, size: 17, color: const Color(0xFF9CA3AF)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  keyboardType: keyboardType,
-                  style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w500, color: const Color(0xFF374151)),
-                  decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero),
-                ),
-              ),
-              const SizedBox(width: 12),
-            ],
+        Text(
+          label,
+          style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF9CA3AF), letterSpacing: 0.7),
+        ),
+        const SizedBox(height: 5),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF111827)),
+          decoration: InputDecoration(
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            prefixIcon: Icon(icon, size: 18, color: const Color(0xFF9CA3AF)),
+            filled: true,
+            fillColor: const Color(0xFFF9F9F6),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF3A5A2A), width: 1.5)),
           ),
         ),
       ],
@@ -569,7 +856,46 @@ class _FormField extends StatelessWidget {
   }
 }
 
-// ─── Toggle Button ────────────────────────────────────────────────────────────
+// ─── Fulfillment Toggle ───────────────────────────────────────────────────────
+
+class _FulfillmentToggle extends StatelessWidget {
+  final bool isPickup;
+  final ValueChanged<bool> onChanged;
+
+  const _FulfillmentToggle({required this.isPickup, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ToggleBtn(
+              label: 'Pickup',
+              icon: Icons.storefront_rounded,
+              isSelected: isPickup,
+              onTap: () => onChanged(true),
+            ),
+          ),
+          Expanded(
+            child: _ToggleBtn(
+              label: 'Delivery',
+              icon: Icons.delivery_dining_rounded,
+              isSelected: !isPickup,
+              onTap: () => onChanged(false),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _ToggleBtn extends StatelessWidget {
   final String label;
@@ -584,31 +910,30 @@ class _ToggleBtn extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 11),
+        duration: const Duration(milliseconds: 180),
         decoration: BoxDecoration(
           color: isSelected ? const Color(0xFFCEE847) : Colors.transparent,
-          borderRadius: BorderRadius.circular(11),
-          boxShadow: isSelected
-              ? [BoxShadow(color: const Color(0xFFCEE847).withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 3))]
-              : null,
+          borderRadius: BorderRadius.circular(9),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 16, color: isSelected ? const Color(0xFF1A2D5A) : const Color(0xFF9CA3AF)),
+            Icon(icon, size: 16, color: isSelected ? const Color(0xFF3A5A2A) : const Color(0xFF6B7280)),
             const SizedBox(width: 6),
-            Text(label,
-              style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w700,
-                color: isSelected ? const Color(0xFF1A2D5A) : const Color(0xFF9CA3AF))),
+            Text(
+              label,
+              style: GoogleFonts.outfit(
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                color: isSelected ? const Color(0xFF3A5A2A) : const Color(0xFF6B7280),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 }
-
-// ─── Fulfillment Info ─────────────────────────────────────────────────────────
 
 class _FulfillmentInfo extends StatelessWidget {
   final IconData icon;
@@ -621,13 +946,13 @@ class _FulfillmentInfo extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F5D8),
+        color: const Color(0xFFF9F9F6),
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 16, color: const Color(0xFF3A5A2A)),
+          Icon(icon, size: 18, color: const Color(0xFF3A5A2A)),
           const SizedBox(width: 8),
           Expanded(
             child: Text(text,
@@ -639,17 +964,22 @@ class _FulfillmentInfo extends StatelessWidget {
   }
 }
 
-// ─── Credit Card ──────────────────────────────────────────────────────────────
+// ─── Credit Card Widget ───────────────────────────────────────────────────────
 
 class _CreditCard extends StatelessWidget {
   final bool isSelected;
-  const _CreditCard({required this.isSelected});
+  final CreditCardModel card;
+  const _CreditCard({required this.isSelected, required this.card});
 
   @override
   Widget build(BuildContext context) {
+    final displayName = card.cardholderName.trim().isNotEmpty
+        ? card.cardholderName.trim().toUpperCase()
+        : 'ALEX JOHNSON';
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      height: 130,
+      height: 150,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         gradient: const LinearGradient(
@@ -665,7 +995,6 @@ class _CreditCard extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Background circle decorations
           Positioned(
             right: -20, top: -20,
             child: Container(
@@ -688,11 +1017,10 @@ class _CreditCard extends StatelessWidget {
           ),
 
           Padding(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Top row: chip + VISA
                 Row(
                   children: [
                     Container(
@@ -708,7 +1036,6 @@ class _CreditCard extends StatelessWidget {
                       ),
                     ),
                     const Spacer(),
-                    // Visa badge
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
@@ -718,44 +1045,46 @@ class _CreditCard extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('VISA', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w900,
+                          Text(card.cardType.toUpperCase(), style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w900,
                             color: Colors.white, letterSpacing: 1.5)),
-                          const SizedBox(width: 4),
-                          Container(
-                            width: 14, height: 14,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: const Color(0xFFCEE847),
+                          if (isSelected) ...[
+                            const SizedBox(width: 4),
+                            Container(
+                              width: 14, height: 14,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Color(0xFFCEE847),
+                              ),
+                              child: const Icon(Icons.check_rounded, size: 9, color: Color(0xFF1A2D5A)),
                             ),
-                            child: const Icon(Icons.check_rounded, size: 9, color: Color(0xFF1A2D5A)),
-                          ),
+                          ],
                         ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                // Card number
-                Text('•••• •••• •••• 4242',
+                const SizedBox(height: 10),
+                Text(card.maskedNumber,
                   style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w600,
                     color: Colors.white.withValues(alpha: 0.90), letterSpacing: 2)),
                 const Spacer(),
-                // Cardholder + expiry
                 Row(
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('CARDHOLDER', style: GoogleFonts.outfit(fontSize: 8, color: Colors.white.withValues(alpha: 0.5), letterSpacing: 0.5)),
-                        Text('JOHN DOE', style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
-                      ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('CARDHOLDER', style: GoogleFonts.outfit(fontSize: 8, color: Colors.white.withValues(alpha: 0.5), letterSpacing: 0.5)),
+                          Text(displayName, style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        ],
+                      ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text('EXPIRY', style: GoogleFonts.outfit(fontSize: 8, color: Colors.white.withValues(alpha: 0.5), letterSpacing: 0.5)),
-                        Text('12/26', style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+                        Text(card.expiryDate, style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
                       ],
                     ),
                   ],
@@ -769,7 +1098,7 @@ class _CreditCard extends StatelessWidget {
   }
 }
 
-// ─── Payment Option (Apple Pay / G-Pay) ──────────────────────────────────────
+// ─── Payment Option (Cash / G-Pay) ──────────────────────────────────────────
 
 class _PaymentOption extends StatelessWidget {
   final String label;
@@ -815,6 +1144,43 @@ class _OrderSummaryRow extends StatelessWidget {
   final _CheckoutItem item;
   const _OrderSummaryRow({required this.item});
 
+  Widget _buildImage(String? path, IconData fallbackIcon) {
+    if (path == null || path.trim().isEmpty) {
+      return _buildFallback(fallbackIcon);
+    }
+    String formatted = path.trim();
+    if (formatted.startsWith('assets/')) {
+      formatted = formatted.replaceFirst('assets/', 'assests/');
+    }
+    final bool isNetwork = formatted.startsWith('http://') ||
+        formatted.startsWith('https://') ||
+        formatted.contains('cloudinary.com') ||
+        formatted.contains('firebasestorage.googleapis.com');
+
+    if (isNetwork) {
+      return Image.network(
+        formatted,
+        fit: BoxFit.cover,
+        errorBuilder: (ctx, err, stack) => _buildFallback(fallbackIcon),
+      );
+    } else {
+      return Image.asset(
+        formatted,
+        fit: BoxFit.cover,
+        errorBuilder: (ctx, err, stack) => _buildFallback(fallbackIcon),
+      );
+    }
+  }
+
+  Widget _buildFallback(IconData fallbackIcon) {
+    return Container(
+      color: const Color(0xFFF0F5D8),
+      child: Center(
+        child: Icon(fallbackIcon, size: 22, color: const Color(0xFF3A5A2A)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -824,14 +1190,9 @@ class _OrderSummaryRow extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: SizedBox(
-              width: 44, height: 44,
-              child: item.imagePath != null
-                  ? Image.asset(item.imagePath!, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: const Color(0xFFF0F5D8),
-                        child: Icon(item.fallbackIcon, size: 22, color: const Color(0xFF3A5A2A))))
-                  : Container(color: const Color(0xFFF0F5D8),
-                      child: Icon(item.fallbackIcon, size: 22, color: const Color(0xFF3A5A2A))),
+              width: 44,
+              height: 44,
+              child: _buildImage(item.imagePath, item.fallbackIcon),
             ),
           ),
           const SizedBox(width: 10),
@@ -839,16 +1200,23 @@ class _OrderSummaryRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item.name,
+                Text(
+                  item.name,
                   style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF111827)),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-                Text('${item.qty}x \$${item.unitPrice.toStringAsFixed(2)}',
-                  style: GoogleFonts.outfit(fontSize: 11, color: const Color(0xFF9CA3AF))),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  '${item.qty}x Rs ${item.unitPrice.toStringAsFixed(2)}',
+                  style: GoogleFonts.outfit(fontSize: 11, color: const Color(0xFF9CA3AF)),
+                ),
               ],
             ),
           ),
-          Text('Rs ${item.total.toStringAsFixed(2)}',
-            style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w800, color: const Color(0xFF111827))),
+          Text(
+            'Rs ${item.total.toStringAsFixed(2)}',
+            style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w800, color: const Color(0xFF111827)),
+          ),
         ],
       ),
     );

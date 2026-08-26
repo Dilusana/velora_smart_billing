@@ -1,8 +1,7 @@
 import 'dart:async';
-import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'cart_item.dart';
@@ -21,8 +20,17 @@ class CartDatabase {
   }
 
   Future<Database> _initDB(String fileName) async {
-    final Directory appDocDir = await getApplicationDocumentsDirectory();
-    final String path = join(appDocDir.path, fileName);
+    if (kIsWeb) {
+      return await openDatabase(
+        inMemoryDatabasePath,
+        version: 2,
+        onCreate: _createDB,
+        onUpgrade: _onUpgrade,
+      );
+    }
+
+    final String dbPath = await getDatabasesPath();
+    final String path = join(dbPath, fileName);
     return await openDatabase(
       path,
       version: 2,
@@ -56,63 +64,117 @@ class CartDatabase {
     }
   }
 
+  final List<CartItem> _memoryCart = [];
+
   Future<CartItem> insertItem(CartItem item) async {
-    final db = await database;
-    final int id = await db.insert('cart', item.toMap());
-    return item.copyWith(id: id);
+    try {
+      final db = await database;
+      final int id = await db.insert('cart', item.toMap());
+      final newItem = item.copyWith(id: id);
+      _memoryCart.add(newItem);
+      return newItem;
+    } catch (_) {
+      final newItem = item.copyWith(id: _memoryCart.length + 1);
+      _memoryCart.add(newItem);
+      return newItem;
+    }
   }
 
   Future<CartItem> addOrIncrementItem(CartItem item) async {
-    final db = await database;
-    final existing = await db.query(
-      'cart',
-      where: 'title = ?',
-      whereArgs: [item.title],
-      limit: 1,
-    );
-
-    if (existing.isNotEmpty) {
-      final current = CartItem.fromMap(existing.first);
-      final updated = current.copyWith(
-        productId: item.productId.isNotEmpty ? item.productId : current.productId,
-        price: item.price > 0 ? item.price : current.price,
-        quantity: current.quantity + item.quantity,
+    try {
+      final db = await database;
+      final existing = await db.query(
+        'cart',
+        where: 'title = ?',
+        whereArgs: [item.title],
+        limit: 1,
       );
-      await updateItem(updated);
-      return updated;
-    }
 
-    return insertItem(item);
+      if (existing.isNotEmpty) {
+        final current = CartItem.fromMap(existing.first);
+        final updated = current.copyWith(
+          productId: item.productId.isNotEmpty ? item.productId : current.productId,
+          price: item.price > 0 ? item.price : current.price,
+          quantity: current.quantity + item.quantity,
+        );
+        await updateItem(updated);
+        return updated;
+      }
+
+      return insertItem(item);
+    } catch (_) {
+      final idx = _memoryCart.indexWhere((i) => i.title == item.title);
+      if (idx != -1) {
+        final current = _memoryCart[idx];
+        final updated = current.copyWith(
+          productId: item.productId.isNotEmpty ? item.productId : current.productId,
+          price: item.price > 0 ? item.price : current.price,
+          quantity: current.quantity + item.quantity,
+        );
+        _memoryCart[idx] = updated;
+        return updated;
+      }
+      return insertItem(item);
+    }
   }
 
   Future<List<CartItem>> getItems() async {
-    final db = await database;
-    final items = await db.query('cart');
-    return items.map((map) => CartItem.fromMap(map)).toList();
+    try {
+      final db = await database;
+      final items = await db.query('cart');
+      return items.map((map) => CartItem.fromMap(map)).toList();
+    } catch (_) {
+      return List.unmodifiable(_memoryCart);
+    }
   }
 
   Future<int> updateItem(CartItem item) async {
-    final db = await database;
-    return db.update(
-      'cart',
-      item.toMap(),
-      where: 'id = ?',
-      whereArgs: [item.id],
-    );
+    try {
+      final db = await database;
+      return db.update(
+        'cart',
+        item.toMap(),
+        where: 'id = ?',
+        whereArgs: [item.id],
+      );
+    } catch (_) {
+      final idx = _memoryCart.indexWhere((i) => i.id == item.id || i.title == item.title);
+      if (idx != -1) {
+        _memoryCart[idx] = item;
+        return 1;
+      }
+      return 0;
+    }
   }
 
   Future<int> deleteItem(int id) async {
-    final db = await database;
-    return db.delete('cart', where: 'id = ?', whereArgs: [id]);
+    try {
+      final db = await database;
+      return db.delete('cart', where: 'id = ?', whereArgs: [id]);
+    } catch (_) {
+      final countBefore = _memoryCart.length;
+      _memoryCart.removeWhere((i) => i.id == id);
+      return countBefore - _memoryCart.length;
+    }
   }
 
   Future<int> clearCart() async {
-    final db = await database;
-    return db.delete('cart');
+    try {
+      final db = await database;
+      await db.delete('cart');
+      _memoryCart.clear();
+      return 1;
+    } catch (_) {
+      final count = _memoryCart.length;
+      _memoryCart.clear();
+      return count;
+    }
   }
 
   Future close() async {
-    final db = await database;
-    db.close();
+    try {
+      final db = await database;
+      await db.close();
+    } catch (_) {}
   }
 }

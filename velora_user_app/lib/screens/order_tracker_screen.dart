@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../repositories/order_repository.dart';
+import '../models/order_model.dart';
+import '../services/customer_tracking_service.dart';
 import 'orders_screen.dart';
+import 'order_receipt_screen.dart';
 
 // ─── Order Tracker Screen ─────────────────────────────────────────────────────
 
@@ -18,34 +24,56 @@ class _OrderTrackerScreenState extends State<OrderTrackerScreen>
   late AnimationController _slideCtrl;
   late Animation<double> _slideAnim;
 
-  // For ORD-3012 (processing) → Out for Delivery step is active
-  static const _steps = [
-    _DeliveryStep(
-      label: 'Order Placed',
-      sublabel: 'Your order was received',
-      icon: Icons.shopping_bag_rounded,
-      isDone: true,
-    ),
-    _DeliveryStep(
-      label: 'Order Prepared',
-      sublabel: 'Items are packed & ready',
-      icon: Icons.inventory_2_rounded,
-      isDone: true,
-    ),
-    _DeliveryStep(
-      label: 'Out for Delivery',
-      sublabel: 'Rider is on the way',
-      icon: Icons.delivery_dining_rounded,
-      isDone: false,
-      isActive: true,
-    ),
-    _DeliveryStep(
-      label: 'Delivered',
-      sublabel: 'Estimated: ~30 min',
-      icon: Icons.home_rounded,
-      isDone: false,
-    ),
-  ];
+  // ── Live Tracking State ────────────────────────────────────────────────────
+  GoogleMapController? _mapController;
+  LatLng? _driverPosition;
+  LatLng? _customerDestination;
+  double _driverHeading = 0.0;
+  Set<Marker> _markers = {};
+  Set<Polyline> _polylines = {};
+  String? _etaText;
+  String? _distText;
+  bool _hasActiveTracking = false;
+
+  List<_DeliveryStep> _getSteps(UserOrderModel? model) {
+    final statusStr = model?.status.toLowerCase() ?? 'processing';
+
+    bool placedDone = true;
+    bool preparedDone = statusStr.contains('prep') || statusStr.contains('confirm') || statusStr.contains('out') || statusStr.contains('deliv') || statusStr.contains('complet');
+    bool outDone = statusStr.contains('out') || statusStr.contains('deliv') || statusStr.contains('complet');
+    bool deliveredDone = statusStr.contains('deliv') || statusStr.contains('complet');
+
+    return [
+      _DeliveryStep(
+        label: 'Order Placed',
+        sublabel: 'Your order was received',
+        icon: Icons.shopping_bag_rounded,
+        isDone: placedDone,
+        isActive: !preparedDone,
+      ),
+      _DeliveryStep(
+        label: 'Order Prepared',
+        sublabel: 'Items are packed & ready',
+        icon: Icons.inventory_2_rounded,
+        isDone: preparedDone,
+        isActive: preparedDone && !outDone,
+      ),
+      _DeliveryStep(
+        label: 'Out for Delivery',
+        sublabel: 'Courier is on the way',
+        icon: Icons.delivery_dining_rounded,
+        isDone: outDone,
+        isActive: outDone && !deliveredDone,
+      ),
+      _DeliveryStep(
+        label: 'Delivered',
+        sublabel: deliveredDone ? 'Delivered successfully!' : 'Estimated: ~15 min',
+        icon: Icons.home_rounded,
+        isDone: deliveredDone,
+        isActive: deliveredDone,
+      ),
+    ];
+  }
 
   @override
   void initState() {
@@ -60,13 +88,182 @@ class _OrderTrackerScreenState extends State<OrderTrackerScreen>
       duration: const Duration(milliseconds: 700),
     )..forward();
     _slideAnim = CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic);
+
+    // Initialize customer destination geocoding
+    _initCustomerDestination();
+
+    // Start listening for driver tracking data
+    _startTrackingListener();
   }
 
   @override
   void dispose() {
     _pulseCtrl.dispose();
     _slideCtrl.dispose();
+    _mapController?.dispose();
     super.dispose();
+  }
+
+  Future<void> _initCustomerDestination() async {
+    final address = widget.order.deliveryAddress;
+    if (address.isNotEmpty) {
+      final latLng = await CustomerTrackingService.geocodeAddress(address);
+      if (latLng != null && mounted) {
+        setState(() {
+          _customerDestination = latLng;
+        });
+        _updateMapMarkersAndRoute();
+      }
+    }
+  }
+
+  void _startTrackingListener() {
+    CustomerTrackingService.getDriverTrackingStream(widget.order.id).listen(
+      (data) {
+        if (!mounted) return;
+        if (data != null && data.isActivelyTracking) {
+          setState(() {
+            _driverPosition = data.driverLatLng;
+            _driverHeading = data.driverHeading;
+            _hasActiveTracking = true;
+          });
+          _updateMapMarkersAndRoute();
+        } else {
+          setState(() {
+            _hasActiveTracking = false;
+          });
+        }
+      },
+      onError: (e) {
+        debugPrint('Tracking stream error: $e');
+      },
+    );
+  }
+
+  Future<void> _updateMapMarkersAndRoute() async {
+    final markers = <Marker>{};
+
+    // Driver marker with heading rotation
+    if (_driverPosition != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('driver'),
+          position: _driverPosition!,
+          rotation: _driverHeading,
+          anchor: const Offset(0.5, 0.5),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          infoWindow: const InfoWindow(title: 'Your Driver'),
+          zIndexInt: 2,
+        ),
+      );
+    }
+
+    // Customer destination marker
+    if (_customerDestination != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('destination'),
+          position: _customerDestination!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+          infoWindow: InfoWindow(
+            title: 'Delivery Location',
+            snippet: widget.order.deliveryAddress,
+          ),
+          zIndexInt: 1,
+        ),
+      );
+    }
+
+    if (mounted) setState(() => _markers = markers);
+
+    // Fetch route if both positions are available
+    if (_driverPosition != null && _customerDestination != null) {
+      final routeData = await CustomerTrackingService.fetchRoute(
+        _driverPosition!,
+        _customerDestination!,
+      );
+      if (routeData != null && mounted) {
+        setState(() {
+          _polylines = {
+            Polyline(
+              polylineId: const PolylineId('route'),
+              points: routeData.points,
+              color: const Color(0xFF3A5A2A),
+              width: 5,
+              jointType: JointType.round,
+              startCap: Cap.roundCap,
+              endCap: Cap.roundCap,
+            ),
+          };
+          _etaText = routeData.durationText;
+          _distText = routeData.distanceText;
+        });
+      }
+
+      // Fit bounds to show both markers
+      if (_mapController != null) {
+        final bounds = CustomerTrackingService.boundsFromLatLngs([
+          _driverPosition!,
+          _customerDestination!,
+        ]);
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLngBounds(bounds, 60),
+        );
+      }
+    }
+  }
+
+  Future<void> _launchGoogleMaps() async {
+    final query = widget.order.deliveryAddress.isNotEmpty
+        ? widget.order.deliveryAddress
+        : '742 Evergreen Terrace, Springfield';
+    final url = Uri.parse('https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}');
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        await launchUrl(url);
+      }
+    } catch (e) {
+      debugPrint('Google Maps launch error: $e');
+    }
+  }
+
+  Widget _buildProductImage(String? path, IconData fallbackIcon) {
+    if (path == null || path.trim().isEmpty) {
+      return Container(
+        color: const Color(0xFFF0F5D8),
+        child: Center(child: Icon(fallbackIcon, size: 20, color: const Color(0xFF3A5A2A))),
+      );
+    }
+    String formatted = path.trim();
+    if (formatted.startsWith('assets/')) {
+      formatted = formatted.replaceFirst('assets/', 'assests/');
+    }
+    final isNetwork = formatted.startsWith('http://') ||
+        formatted.startsWith('https://') ||
+        formatted.contains('cloudinary.com') ||
+        formatted.contains('firebasestorage.googleapis.com');
+
+    if (isNetwork) {
+      return Image.network(
+        formatted,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => Container(
+          color: const Color(0xFFF0F5D8),
+          child: Center(child: Icon(fallbackIcon, size: 20, color: const Color(0xFF3A5A2A))),
+        ),
+      );
+    } else {
+      return Image.asset(
+        formatted,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => Container(
+          color: const Color(0xFFF0F5D8),
+          child: Center(child: Icon(fallbackIcon, size: 20, color: const Color(0xFF3A5A2A))),
+        ),
+      );
+    }
   }
 
   @override
@@ -120,11 +317,11 @@ class _OrderTrackerScreenState extends State<OrderTrackerScreen>
                   ),
                 ),
 
-                // ── Map View ───────────────────────────────────────────
+                // ── Live Google Maps Tracking View ─────────────────────
                 SliverToBoxAdapter(
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 16),
-                    height: 210,
+                    height: 260,
                     clipBehavior: Clip.antiAlias,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(20),
@@ -132,95 +329,93 @@ class _OrderTrackerScreenState extends State<OrderTrackerScreen>
                     ),
                     child: Stack(
                       children: [
-                        // Simulated map background
-                        CustomPaint(
-                          size: const Size(double.infinity, 210),
-                          painter: _MapPainter(),
+                        // Google Map
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: GoogleMap(
+                            initialCameraPosition: CameraPosition(
+                              target: _customerDestination ?? _driverPosition ?? const LatLng(6.9271, 79.8612),
+                              zoom: 14.0,
+                            ),
+                            onMapCreated: (controller) {
+                              _mapController = controller;
+                              // Fit bounds after map creation
+                              if (_driverPosition != null && _customerDestination != null) {
+                                final bounds = CustomerTrackingService.boundsFromLatLngs([
+                                  _driverPosition!,
+                                  _customerDestination!,
+                                ]);
+                                controller.animateCamera(
+                                  CameraUpdate.newLatLngBounds(bounds, 60),
+                                );
+                              }
+                            },
+                            markers: _markers,
+                            polylines: _polylines,
+                            myLocationEnabled: false,
+                            myLocationButtonEnabled: false,
+                            zoomControlsEnabled: false,
+                            mapToolbarEnabled: false,
+                            compassEnabled: false,
+                          ),
                         ),
 
-                        // Pulsing delivery location pin
+                        // Status pill at top-left
                         Positioned(
-                          left: 0, right: 0, top: 0, bottom: 0,
-                          child: Center(
-                            child: AnimatedBuilder(
-                              animation: _pulseCtrl,
-                              builder: (ctx, child) => Stack(
-                                alignment: Alignment.center,
+                          top: 12, left: 16,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _hasActiveTracking ? const Color(0xFF3A5A2A) : const Color(0xFF6B7280),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 8, offset: const Offset(0, 3))],
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _hasActiveTracking ? Icons.delivery_dining_rounded : Icons.schedule_rounded,
+                                  color: _hasActiveTracking ? const Color(0xFFCEE847) : Colors.white70,
+                                  size: 14,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _hasActiveTracking ? 'Live Tracking' : 'Waiting for Driver',
+                                  style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                        // Open Google Maps button at top-right
+                        Positioned(
+                          top: 12, right: 16,
+                          child: GestureDetector(
+                            onTap: _launchGoogleMaps,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 6)],
+                              ),
+                              child: Row(
                                 children: [
-                                  // Outer pulse
-                                  Transform.scale(
-                                    scale: 1.0 + _pulseCtrl.value * 0.6,
-                                    child: Container(
-                                      width: 56, height: 56,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFCEE847).withValues(alpha: 0.25 - _pulseCtrl.value * 0.2),
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                  ),
-                                  // Inner dot
-                                  Container(
-                                    width: 36, height: 36,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF3A5A2A),
-                                      shape: BoxShape.circle,
-                                      border: Border.all(color: Colors.white, width: 3),
-                                      boxShadow: [BoxShadow(color: const Color(0xFF3A5A2A).withValues(alpha: 0.4), blurRadius: 10)],
-                                    ),
-                                    child: const Icon(Icons.delivery_dining_rounded, color: Color(0xFFCEE847), size: 18),
-                                  ),
+                                  const Icon(Icons.map_rounded, size: 14, color: Color(0xFF2563EB)),
+                                  const SizedBox(width: 4),
+                                  Text('Google Maps', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF2563EB))),
                                 ],
                               ),
                             ),
                           ),
                         ),
 
-                        // Status pill at top
+                        // ETA & Distance badge at bottom-center
                         Positioned(
-                          top: 12, left: 16,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF3A5A2A),
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 8, offset: const Offset(0, 3))],
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.delivery_dining_rounded, color: Color(0xFFCEE847), size: 14),
-                                const SizedBox(width: 6),
-                                Text('On the way', style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        // Edit map button
-                        Positioned(
-                          top: 12, right: 16,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.10), blurRadius: 6)],
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.edit_location_alt_rounded, size: 13, color: Color(0xFF3A5A2A)),
-                                const SizedBox(width: 4),
-                                Text('Edit map', style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF3A5A2A))),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        // Delivery time badge at bottom
-                        Positioned(
-                          bottom: 12, left: 0, right: 0,
+                          bottom: 10, left: 0, right: 0,
                           child: Center(
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(30),
@@ -231,7 +426,16 @@ class _OrderTrackerScreenState extends State<OrderTrackerScreen>
                                 children: [
                                   const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFF3A5A2A)),
                                   const SizedBox(width: 6),
-                                  Text('Arriving in ~28 min', style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF111827))),
+                                  Text(
+                                    _etaText != null
+                                        ? 'Arriving in ~$_etaText'
+                                        : (_distText != null ? '$_distText away' : 'Calculating...'),
+                                    style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF111827)),
+                                  ),
+                                  if (_distText != null && _etaText != null) ...[
+                                    Text('  •  ', style: GoogleFonts.outfit(fontSize: 10, color: const Color(0xFF9CA3AF))),
+                                    Text(_distText!, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w800, color: const Color(0xFF3A5A2A))),
+                                  ],
                                 ],
                               ),
                             ),
@@ -294,9 +498,33 @@ class _OrderTrackerScreenState extends State<OrderTrackerScreen>
                               // Action buttons
                               Row(
                                 children: [
-                                  _RoundIconBtn(icon: Icons.call_rounded, color: const Color(0xFFDCFCE7), iconColor: const Color(0xFF16A34A)),
+                                  _RoundIconBtn(
+                                    icon: Icons.call_rounded,
+                                    color: const Color(0xFFDCFCE7),
+                                    iconColor: const Color(0xFF16A34A),
+                                    onTap: () {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Calling courier Alan R. at +1 (555) 234-5678...', style: GoogleFonts.outfit(color: Colors.white)),
+                                          backgroundColor: const Color(0xFF3A5A2A),
+                                        ),
+                                      );
+                                    },
+                                  ),
                                   const SizedBox(width: 8),
-                                  _RoundIconBtn(icon: Icons.chat_bubble_rounded, color: const Color(0xFFEEF5C8), iconColor: const Color(0xFF3A5A2A)),
+                                  _RoundIconBtn(
+                                    icon: Icons.chat_bubble_rounded,
+                                    color: const Color(0xFFEEF5C8),
+                                    iconColor: const Color(0xFF3A5A2A),
+                                    onTap: () {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Messaging courier Alan R...', style: GoogleFonts.outfit(color: Colors.white)),
+                                          backgroundColor: const Color(0xFF3A5A2A),
+                                        ),
+                                      );
+                                    },
+                                  ),
                                 ],
                               ),
                             ],
@@ -324,15 +552,106 @@ class _OrderTrackerScreenState extends State<OrderTrackerScreen>
                           Text('Delivery Progress',
                             style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFF111827))),
                           const SizedBox(height: 16),
-                          ..._steps.asMap().entries.map((e) =>
-                            _StepRow(step: e.value, isLast: e.key == _steps.length - 1, pulseCtrl: _pulseCtrl)),
+                          StreamBuilder<UserOrderModel?>(
+                            stream: OrderRepository.instance.getOrderByIdStream(widget.order.id),
+                            builder: (context, snapshot) {
+                              final steps = _getSteps(snapshot.data);
+                              return Column(
+                                children: steps.asMap().entries.map((e) =>
+                                  _StepRow(step: e.value, isLast: e.key == steps.length - 1, pulseCtrl: _pulseCtrl)).toList(),
+                              );
+                            },
+                          ),
                         ],
                       ),
                     ),
                   ),
                 ),
 
-                // ── Order Items Summary ────────────────────────────────
+                // ── Populated Post-Delivery View / Receipt Button ────────
+                SliverToBoxAdapter(
+                  child: StreamBuilder<UserOrderModel?>(
+                    stream: OrderRepository.instance.getOrderByIdStream(widget.order.id),
+                    builder: (context, snapshot) {
+                      final status = snapshot.data?.status.toLowerCase() ?? 'processing';
+                      final isDelivered = status.contains('deliv') || status.contains('complet');
+
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                        child: Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: isDelivered ? const Color(0xFFF0FDF4) : Colors.white,
+                            borderRadius: BorderRadius.circular(18),
+                            border: isDelivered ? Border.all(color: const Color(0xFF86EFAC), width: 1.5) : null,
+                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.055), blurRadius: 12, offset: const Offset(0, 3))],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    isDelivered ? Icons.check_circle_rounded : Icons.receipt_long_rounded,
+                                    color: isDelivered ? const Color(0xFF16A34A) : const Color(0xFF3A5A2A),
+                                    size: 22,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    isDelivered ? 'Order Delivered!' : 'Order Summary & Receipt',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                      color: isDelivered ? const Color(0xFF15803D) : const Color(0xFF111827),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (isDelivered) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Your order has been delivered by courier Alan R. You can view the itemized receipt below.',
+                                  style: GoogleFonts.outfit(fontSize: 12, color: const Color(0xFF4B5563)),
+                                ),
+                              ],
+                              const SizedBox(height: 14),
+                              SizedBox(
+                                width: double.infinity,
+                                height: 48,
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    Navigator.of(context).push(
+                                      PageRouteBuilder(
+                                        pageBuilder: (ctx, anim, _) => OrderReceiptScreen(order: widget.order),
+                                        transitionsBuilder: (ctx, anim, _, child) => FadeTransition(
+                                          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+                                          child: child,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF3A5A2A),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                    elevation: 0,
+                                  ),
+                                  icon: const Icon(Icons.receipt_long_rounded, size: 18),
+                                  label: Text(
+                                    'View Official Order Receipt',
+                                    style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                // ── Order Items Details Summary ─────────────────────────
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
@@ -368,12 +687,7 @@ class _OrderTrackerScreenState extends State<OrderTrackerScreen>
                                   borderRadius: BorderRadius.circular(8),
                                   child: SizedBox(
                                     width: 40, height: 40,
-                                    child: item.imagePath != null
-                                        ? Image.asset(item.imagePath!, fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) => Container(
-                                              color: const Color(0xFFF0F5D8),
-                                              child: Icon(item.fallbackIcon, size: 20, color: const Color(0xFF3A5A2A))))
-                                        : Container(color: const Color(0xFFF0F5D8), child: Icon(item.fallbackIcon, size: 20, color: const Color(0xFF3A5A2A))),
+                                    child: _buildProductImage(item.imagePath, item.fallbackIcon),
                                   ),
                                 ),
                                 const SizedBox(width: 10),
@@ -393,7 +707,7 @@ class _OrderTrackerScreenState extends State<OrderTrackerScreen>
                               ],
                             ),
                           )),
-                          Divider(color: const Color(0xFFE5E7EB)),
+                          const Divider(color: Color(0xFFE5E7EB)),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -413,29 +727,7 @@ class _OrderTrackerScreenState extends State<OrderTrackerScreen>
               ],
             ),
 
-            // ── Bottom Nav ─────────────────────────────────────────────
-            Positioned(
-              bottom: 0, left: 0, right: 0,
-              child: Container(
-                margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1A2D5A),
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [BoxShadow(color: const Color(0xFF1A2D5A).withValues(alpha: 0.35), blurRadius: 20, offset: const Offset(0, 8))],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _NavItem(icon: Icons.home_rounded, label: 'Home', isActive: false, onTap: () => Navigator.of(context).popUntil((r) => r.isFirst)),
-                    _NavItem(icon: Icons.grid_view_rounded, label: 'Categories', isActive: false, onTap: () {}),
-                    _NavItem(icon: Icons.shopping_cart_outlined, label: 'Cart', isActive: false, onTap: () {}),
-                    _NavItem(icon: Icons.receipt_long_rounded, label: 'Orders', isActive: true, onTap: () => Navigator.of(context).pop()),
-                    _NavItem(icon: Icons.person_outline_rounded, label: 'Profile', isActive: false, onTap: () {}),
-                  ],
-                ),
-              ),
-            ),
+
           ],
         ),
       ),
@@ -443,74 +735,7 @@ class _OrderTrackerScreenState extends State<OrderTrackerScreen>
   }
 }
 
-// ─── Map Painter ──────────────────────────────────────────────────────────────
 
-class _MapPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Background
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height),
-        Paint()..color = const Color(0xFFE8F0D8));
-
-    final roadPaint = Paint()..color = Colors.white..strokeWidth = 18..strokeCap = StrokeCap.round;
-    final roadOutline = Paint()..color = const Color(0xFFD0D8C0)..strokeWidth = 20..strokeCap = StrokeCap.round;
-    final blockPaint = Paint()..color = const Color(0xFFD0DCC0);
-    final blockPaint2 = Paint()..color = const Color(0xFFC8D4B8);
-
-    // Building blocks
-    final blocks = [
-      Rect.fromLTWH(10, 10, 70, 50),
-      Rect.fromLTWH(100, 10, 80, 40),
-      Rect.fromLTWH(200, 10, 60, 55),
-      Rect.fromLTWH(10, 80, 55, 40),
-      Rect.fromLTWH(160, 80, 75, 35),
-      Rect.fromLTWH(10, 145, 80, 50),
-      Rect.fromLTWH(200, 140, 65, 60),
-      Rect.fromLTWH(280, 30, 60, 40),
-      Rect.fromLTWH(280, 140, 55, 60),
-      Rect.fromLTWH(108, 140, 70, 60),
-    ];
-    for (var i = 0; i < blocks.length; i++) {
-      canvas.drawRRect(RRect.fromRectAndRadius(blocks[i], const Radius.circular(6)),
-          i.isEven ? blockPaint : blockPaint2);
-    }
-
-    // Horizontal roads
-    for (final y in [70.0, 130.0]) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), roadOutline);
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), roadPaint);
-    }
-    // Vertical roads
-    for (final x in [90.0, 190.0, 275.0]) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), roadOutline);
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), roadPaint);
-    }
-
-    // Route line
-    final routePaint = Paint()
-      ..color = const Color(0xFF3A5A2A)
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    final path = Path()
-      ..moveTo(0, 130)
-      ..lineTo(90, 130)
-      ..lineTo(90, 70)
-      ..lineTo(190, 70)
-      ..lineTo(190, 100)
-      ..lineTo(size.width / 2, size.height / 2);
-    canvas.drawPath(path, routePaint..color = const Color(0xFFCEE847)..strokeWidth = 5);
-
-    // Random accent dots (parks)
-    final parkPaint = Paint()..color = const Color(0xFFA8C890);
-    for (final spot in [(45.0, 160.0), (230.0, 155.0), (300.0, 80.0)]) {
-      canvas.drawCircle(Offset(spot.$1, spot.$2), 10, parkPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
 
 // ─── Delivery Step Model ──────────────────────────────────────────────────────
 
@@ -544,10 +769,8 @@ class _StepRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Icon + line
         Column(
           children: [
-            // Circle
             step.isActive
                 ? AnimatedBuilder(
                     animation: pulseCtrl,
@@ -573,7 +796,6 @@ class _StepRow extends StatelessWidget {
                         : Icon(step.icon, color: const Color(0xFFD1D5DB), size: 18),
                   ),
 
-            // Vertical connector
             if (!isLast)
               Container(
                 width: 2, height: 32,
@@ -587,7 +809,6 @@ class _StepRow extends StatelessWidget {
 
         const SizedBox(width: 14),
 
-        // Text
         Padding(
           padding: const EdgeInsets.only(top: 9),
           child: Column(
@@ -619,51 +840,22 @@ class _RoundIconBtn extends StatelessWidget {
   final IconData icon;
   final Color color;
   final Color iconColor;
-  const _RoundIconBtn({required this.icon, required this.color, required this.iconColor});
+  final VoidCallback? onTap;
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 38, height: 38,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      child: Icon(icon, color: iconColor, size: 18),
-    );
-  }
-}
-
-// ─── Nav Item ─────────────────────────────────────────────────────────────────
-
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isActive;
-  final VoidCallback onTap;
-  const _NavItem({required this.icon, required this.label, required this.isActive, required this.onTap});
+  const _RoundIconBtn({required this.icon, required this.color, required this.iconColor, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isActive ? const Color(0xFFCEE847) : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-              color: isActive ? const Color(0xFF1A2D5A) : Colors.white.withValues(alpha: 0.55),
-              size: 22),
-            if (isActive) ...[
-              const SizedBox(height: 2),
-              Text(label, style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF1A2D5A))),
-            ],
-          ],
-        ),
+      child: Container(
+        width: 38, height: 38,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        child: Icon(icon, color: iconColor, size: 18),
       ),
     );
   }
 }
+
+
+

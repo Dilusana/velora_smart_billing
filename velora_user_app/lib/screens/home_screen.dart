@@ -1,11 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:async';
+import '../models/product_model.dart';
+import '../models/category_model.dart';
+import '../repositories/category_repository.dart';
+import '../repositories/product_repository.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../services/cart_service.dart';
+import '../services/firebase_auth_service.dart';
+import '../widgets/product_quantity_modal.dart';
+
 import 'explore_screen.dart';
 import 'cart_screen.dart';
 import 'category_screen.dart';
 import 'orders_screen.dart';
 import 'profile_screen.dart';
+
 
 // ─── Color Palette ────────────────────────────────────────────────────────────
 class VeloraColors {
@@ -92,50 +102,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _selectedNav = 0;
   int _selectedCategory = 0;
   int _bannerPage = 0;
-  int _cartCount = 0;
+  String _searchQuery = '';
+  String _selectedSort = 'Recommended';
+  String _selectedTagFilter = 'All';
+  final TextEditingController _searchController = TextEditingController();
 
   late final PageController _bannerController;
   late Timer _bannerTimer;
   late AnimationController _navAnimController;
 
-  final List<CategoryItem> _categories = [
-    CategoryItem(
-      label: 'Veg & Fruits',
-      icon: Icons.eco_rounded,
-      color: const Color(0xFF22C55E),
-      imagePath: 'assests/veg_fruits.png',
-    ),
-    CategoryItem(
-      label: 'Grocery',
-      icon: Icons.shopping_basket_rounded,
-      color: const Color(0xFFF59E0B),
-      imagePath: 'assests/grocery.png',
-    ),
-    CategoryItem(
-      label: 'Household',
-      icon: Icons.home_rounded,
-      color: const Color(0xFF8B5CF6),
-      imagePath: 'assests/household.png',
-    ),
-    CategoryItem(
-      label: 'Frozen',
-      icon: Icons.ac_unit_rounded,
-      color: const Color(0xFF3B82F6),
-      imagePath: 'assests/frozenfoods.jpeg',
-    ),
-    CategoryItem(
-      label: 'Chilled',
-      icon: Icons.kitchen_rounded,
-      color: const Color(0xFF06B6D4),
-      imagePath: 'assests/chilledfood.png',
-    ),
-    CategoryItem(
-      label: 'Beverages',
-      icon: Icons.local_drink_rounded,
-      color: const Color(0xFFEF4444),
-      imagePath: 'assests/beverages.png',
-    ),
-  ];
+
 
   final List<BannerData> _banners = [
     BannerData(
@@ -167,77 +143,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     ),
   ];
 
-  final List<ProductItem> _recommended = [
-    ProductItem(
-      name: 'Organic Whole Milk',
-      unit: '1 Litre',
-      price: 4.50,
-      cardColor: const Color(0xFFFFFBEB),
-      icon: Icons.icecream_rounded,
-      imagePath: 'assests/milk_product.jpg',
-    ),
-    ProductItem(
-      name: 'Premium Bananas',
-      unit: 'Per kg',
-      price: 2.20,
-      cardColor: const Color(0xFFF0FDF4),
-      icon: Icons.apple_rounded,
-      imagePath: 'assests/bananas_product.jpg',
-    ),
-    ProductItem(
-      name: 'Farm Eggs',
-      unit: 'Dozen',
-      price: 5.99,
-      cardColor: const Color(0xFFFFF7ED),
-      icon: Icons.egg_rounded,
-      imagePath: 'assests/eggs_product.jpg',
-    ),
-    ProductItem(
-      name: 'Baby Spinach',
-      unit: '200g bag',
-      price: 3.25,
-      cardColor: const Color(0xFFF0FDF4),
-      icon: Icons.eco_rounded,
-      imagePath: 'assests/spinach_product.jpg',
-    ),
-  ];
-
-  final List<ProductItem> _bestSellers = [
-    ProductItem(
-      name: 'Artisan Sourdough',
-      unit: 'Per loaf',
-      price: 6.00,
-      cardColor: const Color(0xFFFFFBEB),
-      icon: Icons.breakfast_dining_rounded,
-      imagePath: 'assests/sourdough_product.jpg',
-    ),
-    ProductItem(
-      name: 'Wildflower Honey',
-      unit: '500ml jar',
-      price: 8.50,
-      originalPrice: 10.99,
-      cardColor: const Color(0xFFFFF7ED),
-      icon: Icons.local_drink_rounded,
-      imagePath: 'assests/honey_product.jpg',
-    ),
-    ProductItem(
-      name: 'Greek Yogurt',
-      unit: '400g pot',
-      price: 3.80,
-      cardColor: const Color(0xFFF0F9FF),
-      icon: Icons.icecream_rounded,
-      imagePath: 'assests/yogurt_product.jpg',
-    ),
-    ProductItem(
-      name: 'Cherry Tomatoes',
-      unit: '500g punnet',
-      price: 2.75,
-      cardColor: const Color(0xFFFFF1F2),
-      icon: Icons.eco_rounded,
-      imagePath: 'assests/tomatoes_product.jpg',
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -263,32 +168,33 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _searchController.dispose();
     _bannerController.dispose();
     _bannerTimer.cancel();
     _navAnimController.dispose();
     super.dispose();
   }
 
-  void _addToCart() {
-    setState(() => _cartCount++);
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_rounded, color: VeloraColors.lime, size: 18),
-            const SizedBox(width: 10),
-            Text('Added to cart!', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w500)),
-          ],
-        ),
-        backgroundColor: VeloraColors.navy,
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.all(16),
-      ),
+  void _addToCart({ProductItem? item, ProductModel? modelItem}) {
+    final String title = modelItem?.name ?? item?.name ?? 'Fresh Item';
+    final String category = modelItem?.category ?? 'Grocery';
+    final String desc = modelItem?.unit ?? item?.unit ?? '1 unit';
+    final double price = modelItem?.price ?? item?.price ?? 1.0;
+    final String img = modelItem?.imageUrl ?? item?.imagePath ?? '';
+    final String pId = modelItem?.id ?? 'prod_${title.toLowerCase().replaceAll(RegExp(r'\s+'), '_')}';
+
+    ProductQuantityModal.show(
+      context,
+      productId: pId,
+      productName: title,
+      category: category,
+      unit: desc,
+      basePrice: price,
+      imageUrl: img,
+      fallbackIcon: item?.icon ?? Icons.shopping_basket_rounded,
     );
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -312,13 +218,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       const SizedBox(height: 28),
                       _buildSectionHeader('Recommended for You', 'View All'),
                       const SizedBox(height: 14),
-                      _buildProductHorizontalList(_recommended),
-                      const SizedBox(height: 28),
-                      _buildSpecialOffer(),
-                      const SizedBox(height: 28),
-                      _buildSectionHeader('Best Sellers', 'See All'),
-                      const SizedBox(height: 14),
-                      _buildProductHorizontalList(_bestSellers),
+                      StreamBuilder<List<ProductModel>>(
+                        stream: ProductRepository.instance.getProductsStream(),
+                        builder: (context, snapshot) {
+                          final products = snapshot.hasData ? snapshot.data! : <ProductModel>[];
+                          final filtered = _getFilteredFirestoreProducts(products);
+                          return _buildFirestoreProductHorizontalList(filtered);
+                        },
+                      ),
                       const SizedBox(height: 100),
                     ],
                   ),
@@ -351,26 +258,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Row(
           children: [
-            // Logo area
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: VeloraColors.lime,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.storefront_rounded, color: VeloraColors.navy, size: 20),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              'Velora',
-              style: GoogleFonts.outfit(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                color: VeloraColors.textPrimary,
-                letterSpacing: 0.3,
-              ),
-            ),
             const Spacer(),
             // Notification button
             Container(
@@ -390,23 +277,36 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               child: const Icon(Icons.notifications_none_rounded, color: VeloraColors.navy, size: 20),
             ),
             const SizedBox(width: 10),
-            // Avatar
-            Stack(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [VeloraColors.lime, VeloraColors.limeDeep],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+            // Avatar (Tap to direct to ProfileScreen)
+            GestureDetector(
+              onTap: () {
+                Navigator.of(context).push(
+                  PageRouteBuilder(
+                    pageBuilder: (ctx, anim, _) => const ProfileScreen(),
+                    transitionsBuilder: (ctx, anim, _, child) => SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(1.0, 0.0),
+                        end: Offset.zero,
+                      ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                      child: child,
                     ),
-                    borderRadius: BorderRadius.circular(12),
+                    transitionDuration: const Duration(milliseconds: 350),
                   ),
-                  child: const Icon(Icons.person_rounded, color: VeloraColors.navy, size: 22),
+                );
+              },
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [VeloraColors.lime, VeloraColors.limeDeep],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              ],
+                child: const Icon(Icons.person_rounded, color: VeloraColors.navy, size: 22),
+              ),
             ),
           ],
         ),
@@ -422,14 +322,31 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Hello, Shopper! 👋',
-            style: GoogleFonts.outfit(
-              fontSize: 26,
-              fontWeight: FontWeight.w800,
-              color: VeloraColors.textPrimary,
-              height: 1.2,
-            ),
+          StreamBuilder<User?>(
+            stream: FirebaseAuthService.instance.authStateChanges,
+            builder: (context, snapshot) {
+              final user = snapshot.data ?? FirebaseAuthService.instance.currentUser;
+              String firstName = 'Shopper';
+              if (user != null) {
+                if (user.displayName != null && user.displayName!.trim().isNotEmpty) {
+                  firstName = user.displayName!.trim().split(' ').first;
+                } else if (user.email != null && user.email!.contains('@')) {
+                  final part = user.email!.split('@').first;
+                  if (part.isNotEmpty) {
+                    firstName = part[0].toUpperCase() + part.substring(1);
+                  }
+                }
+              }
+              return Text(
+                'Hello, $firstName! 👋',
+                style: GoogleFonts.outfit(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  color: VeloraColors.textPrimary,
+                  height: 1.2,
+                ),
+              );
+            },
           ),
           const SizedBox(height: 4),
           Text(
@@ -454,6 +371,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ],
             ),
             child: TextField(
+              controller: _searchController,
+              onChanged: (val) => setState(() => _searchQuery = val),
               decoration: InputDecoration(
                 hintText: 'Search fresh produce, dairy…',
                 hintStyle: GoogleFonts.outfit(
@@ -461,21 +380,234 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   fontSize: 14,
                 ),
                 prefixIcon: const Icon(Icons.search_rounded, color: VeloraColors.textMuted, size: 20),
-                suffixIcon: Container(
-                  margin: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: VeloraColors.lime,
-                    borderRadius: BorderRadius.circular(10),
+                suffixIcon: GestureDetector(
+                  onTap: () => _showFilterBottomSheet(context),
+                  child: Container(
+                    margin: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: (_selectedSort != 'Recommended' || _selectedTagFilter != 'All')
+                          ? VeloraColors.navy
+                          : VeloraColors.lime,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.tune_rounded,
+                      color: (_selectedSort != 'Recommended' || _selectedTagFilter != 'All')
+                          ? Colors.white
+                          : VeloraColors.navy,
+                      size: 18,
+                    ),
                   ),
-                  child: const Icon(Icons.tune_rounded, color: VeloraColors.navy, size: 18),
                 ),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
               ),
             ),
           ),
+          if (_selectedSort != 'Recommended' || _selectedTagFilter != 'All' || _searchQuery.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                if (_selectedTagFilter != 'All')
+                  _buildFilterChip('Tag: $_selectedTagFilter', () => setState(() => _selectedTagFilter = 'All')),
+                if (_selectedSort != 'Recommended')
+                  _buildFilterChip('Sort: $_selectedSort', () => setState(() => _selectedSort = 'Recommended')),
+                if (_searchQuery.isNotEmpty)
+                  _buildFilterChip('Query: "$_searchQuery"', () {
+                    _searchController.clear();
+                    setState(() => _searchQuery = '');
+                  }),
+              ],
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildFilterChip(String label, VoidCallback onClear) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: VeloraColors.sectionBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: VeloraColors.limeDeep.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.outfit(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: VeloraColors.navy,
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: onClear,
+            child: const Icon(Icons.close_rounded, size: 14, color: VeloraColors.navy),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showFilterBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: VeloraColors.cardBg,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: VeloraColors.divider,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Text(
+                        'Filter Products',
+                        style: GoogleFonts.outfit(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: VeloraColors.textPrimary,
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () {
+                          setModalState(() {
+                            _selectedSort = 'Recommended';
+                            _selectedTagFilter = 'All';
+                          });
+                          setState(() {
+                            _selectedSort = 'Recommended';
+                            _selectedTagFilter = 'All';
+                          });
+                        },
+                        child: Text(
+                          'Reset All',
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: VeloraColors.badgeRed,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Sort By',
+                    style: GoogleFonts.outfit(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: VeloraColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: ['Recommended', 'Price: Low to High', 'Price: High to Low'].map((sortOption) {
+                      final isSel = _selectedSort == sortOption;
+                      return ChoiceChip(
+                        label: Text(sortOption),
+                        selected: isSel,
+                        selectedColor: VeloraColors.navy,
+                        backgroundColor: VeloraColors.bg,
+                        labelStyle: GoogleFonts.outfit(
+                          color: isSel ? Colors.white : VeloraColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                        onSelected: (selected) {
+                          setModalState(() => _selectedSort = sortOption);
+                          setState(() => _selectedSort = sortOption);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Filter by Tag',
+                    style: GoogleFonts.outfit(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: VeloraColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: ['All', 'Sale', 'Best Seller'].map((tagOption) {
+                      final isSel = _selectedTagFilter == tagOption;
+                      return ChoiceChip(
+                        label: Text(tagOption),
+                        selected: isSel,
+                        selectedColor: VeloraColors.limeDeep,
+                        backgroundColor: VeloraColors.bg,
+                        labelStyle: GoogleFonts.outfit(
+                          color: isSel ? Colors.white : VeloraColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                        onSelected: (selected) {
+                          setModalState(() => _selectedTagFilter = tagOption);
+                          setState(() => _selectedTagFilter = tagOption);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: VeloraColors.navy,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: Text(
+                        'Apply Filters',
+                        style: GoogleFonts.outfit(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -492,19 +624,33 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Text(
                 'Categories',
                 style: GoogleFonts.outfit(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
                   color: VeloraColors.textPrimary,
                 ),
               ),
               const Spacer(),
               GestureDetector(
-                onTap: () {},
+                onTap: () {
+                  Navigator.of(context).push(
+                    PageRouteBuilder(
+                      pageBuilder: (ctx, anim, _) => const ExploreScreen(),
+                      transitionsBuilder: (ctx, anim, _, child) => SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(1.0, 0.0),
+                          end: Offset.zero,
+                        ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                        child: child,
+                      ),
+                      transitionDuration: const Duration(milliseconds: 350),
+                    ),
+                  );
+                },
                 child: Text(
                   'View All',
                   style: GoogleFonts.outfit(
                     fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                     color: VeloraColors.limeDeep,
                   ),
                 ),
@@ -514,130 +660,156 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ),
         const SizedBox(height: 14),
         SizedBox(
-          height: 96,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: _categories.length,
-            itemBuilder: (ctx, i) {
-              final cat = _categories[i];
-              final isSelected = _selectedCategory == i;
-              // Map home-screen labels → allCategoryData keys
-              const categoryKeys = [
-                'Vegetables\n& Fruits',
-                'Groceries',
-                'Household',
-                'Frozen\nFoods',
-                'Chilled\nFoods',
-                'Beverages',
-              ];
-              return GestureDetector(
-                onTap: () {
-                  setState(() => _selectedCategory = i);
-                  Navigator.of(context).push(
-                    PageRouteBuilder(
-                      pageBuilder: (ctx, anim, _) => CategoryScreen(
-                        categoryLabel: categoryKeys[i],
+          height: 126,
+          child: StreamBuilder<List<CategoryModel>>(
+            stream: CategoryRepository.instance.getCategoriesStream(),
+            builder: (context, snapshot) {
+              final dbCategories = snapshot.hasData && snapshot.data!.isNotEmpty
+                  ? snapshot.data!
+                  : CategoryRepository.fallbackCategories;
+
+              return ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: dbCategories.length,
+                itemBuilder: (ctx, i) {
+                  final cat = dbCategories[i];
+                  final isSelected = _selectedCategory == i;
+
+                  String imgPath = cat.imageAsset;
+                  if (imgPath.startsWith('assets/')) {
+                    imgPath = imgPath.replaceFirst('assets/', 'assests/');
+                  }
+
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() => _selectedCategory = i);
+                      Navigator.of(context).push(
+                        PageRouteBuilder(
+                          pageBuilder: (ctx, anim, _) => CategoryScreen(
+                            categoryLabel: cat.title,
+                          ),
+                          transitionsBuilder: (ctx, anim, _, child) =>
+                              SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(1.0, 0.0),
+                              end: Offset.zero,
+                            ).animate(CurvedAnimation(
+                                parent: anim, curve: Curves.easeOutCubic)),
+                            child: child,
+                          ),
+                          transitionDuration: const Duration(milliseconds: 350),
+                        ),
+                      );
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      margin: const EdgeInsets.symmetric(horizontal: 6),
+                      width: 104,
+                      decoration: BoxDecoration(
+                        color: isSelected ? VeloraColors.navy : VeloraColors.cardBg,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected ? VeloraColors.lime : Colors.transparent,
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isSelected
+                                ? VeloraColors.navy.withValues(alpha: 0.25)
+                                : Colors.black.withValues(alpha: 0.06),
+                            blurRadius: isSelected ? 12 : 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
-                      transitionsBuilder: (ctx, anim, _, child) =>
-                          SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(1.0, 0.0),
-                          end: Offset.zero,
-                        ).animate(CurvedAnimation(
-                            parent: anim, curve: Curves.easeOutCubic)),
-                        child: child,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 60,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Colors.white.withValues(alpha: 0.12)
+                                  : VeloraColors.sectionBg,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: imgPath.isNotEmpty
+                                  ? cat.isWebImage
+                                      ? Image.network(
+                                          imgPath,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) =>
+                                              _buildCategoryIconFallback(cat.title, isSelected),
+                                        )
+                                      : Image.asset(
+                                          imgPath,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) =>
+                                              _buildCategoryIconFallback(cat.title, isSelected),
+                                        )
+                                  : _buildCategoryIconFallback(cat.title, isSelected),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Text(
+                              cat.title,
+                              style: GoogleFonts.outfit(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: isSelected ? Colors.white : VeloraColors.textPrimary,
+                                height: 1.2,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
-                      transitionDuration: const Duration(milliseconds: 350),
                     ),
                   );
                 },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
-                  margin: const EdgeInsets.symmetric(horizontal: 5),
-                  width: 72,
-                  decoration: BoxDecoration(
-                    color: isSelected ? VeloraColors.navy : VeloraColors.cardBg,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: isSelected
-                            ? VeloraColors.navy.withValues(alpha: 0.25)
-                            : Colors.black.withValues(alpha: 0.05),
-                        blurRadius: isSelected ? 12 : 6,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Image thumbnail or icon fallback
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(11),
-                        child: SizedBox(
-                          width: 42,
-                          height: 42,
-                          child: cat.imagePath != null
-                              ? Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    Image.asset(
-                                      cat.imagePath!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Container(
-                                        color: isSelected
-                                            ? VeloraColors.lime
-                                            : cat.color.withValues(alpha: 0.12),
-                                        child: Icon(cat.icon,
-                                            color: isSelected
-                                                ? VeloraColors.navy
-                                                : cat.color,
-                                            size: 20),
-                                      ),
-                                    ),
-                                    // Tint overlay when selected
-                                    if (isSelected)
-                                      Container(
-                                        color: VeloraColors.lime.withValues(alpha: 0.35),
-                                      ),
-                                  ],
-                                )
-                              : Container(
-                                  color: isSelected
-                                      ? VeloraColors.lime
-                                      : cat.color.withValues(alpha: 0.12),
-                                  child: Icon(cat.icon,
-                                      color: isSelected
-                                          ? VeloraColors.navy
-                                          : cat.color,
-                                      size: 20),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        cat.label,
-                        style: GoogleFonts.outfit(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: isSelected ? Colors.white : VeloraColors.textSecondary,
-                        ),
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
               );
             },
           ),
         ),
-
       ],
     );
   }
+
+  Widget _buildCategoryIconFallback(String title, bool isSelected) {
+    IconData icon = Icons.shopping_basket_rounded;
+    Color color = const Color(0xFFF59E0B);
+    final lower = title.toLowerCase();
+    if (lower.contains('veg') || lower.contains('fruit')) {
+      icon = Icons.eco_rounded;
+      color = const Color(0xFF22C55E);
+    } else if (lower.contains('house')) {
+      icon = Icons.home_rounded;
+      color = const Color(0xFF8B5CF6);
+    } else if (lower.contains('frozen')) {
+      icon = Icons.ac_unit_rounded;
+      color = const Color(0xFF3B82F6);
+    } else if (lower.contains('chill')) {
+      icon = Icons.kitchen_rounded;
+      color = const Color(0xFF06B6D4);
+    } else if (lower.contains('beverag')) {
+      icon = Icons.local_drink_rounded;
+      color = const Color(0xFFEF4444);
+    }
+
+    return Container(
+      color: isSelected ? VeloraColors.lime : color.withValues(alpha: 0.12),
+      child: Icon(icon, color: isSelected ? VeloraColors.navy : color, size: 20),
+    );
+  }
+
 
   // ─── Banner Carousel ─────────────────────────────────────────────────────
 
@@ -887,21 +1059,63 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // ─── Product Horizontal List ──────────────────────────────────────────────
 
-  Widget _buildProductHorizontalList(List<ProductItem> items) {
+  List<ProductModel> _getFilteredFirestoreProducts(List<ProductModel> originalList) {
+    List<ProductModel> list = List.from(originalList);
+
+    if (_searchQuery.isNotEmpty) {
+      list = ProductRepository.instance.searchProducts(list, _searchQuery);
+    }
+
+    if (_selectedTagFilter == 'Sale') {
+      list = list.where((p) => p.originalPrice != null && p.originalPrice! > p.price).toList();
+    } else if (_selectedTagFilter == 'Best Seller') {
+      list = list.where((p) => p.isFeatured).toList();
+    }
+
+    if (_selectedSort == 'Price: Low to High') {
+      list.sort((a, b) => a.price.compareTo(b.price));
+    } else if (_selectedSort == 'Price: High to Low') {
+      list.sort((a, b) => b.price.compareTo(a.price));
+    }
+
+    return list;
+  }
+
+  Widget _buildFirestoreProductHorizontalList(List<ProductModel> items) {
+    if (items.isEmpty) {
+      return SizedBox(
+        height: 140,
+        child: Center(
+          child: Text(
+            'No products found matching filters',
+            style: GoogleFonts.outfit(
+              fontSize: 14,
+              color: VeloraColors.textMuted,
+            ),
+          ),
+        ),
+      );
+    }
     return SizedBox(
-      height: 210,
+      height: 220,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: items.length,
-        itemBuilder: (ctx, i) => _buildProductCard(items[i]),
+        itemBuilder: (ctx, i) => _buildFirestoreProductCard(items[i]),
       ),
     );
   }
 
-  Widget _buildProductCard(ProductItem item) {
+  Widget _buildFirestoreProductCard(ProductModel item) {
+    String imgPath = item.imageUrl;
+    if (imgPath.startsWith('assets/')) {
+      imgPath = imgPath.replaceFirst('assets/', 'assests/');
+    }
+    final bool isNetworkImage = imgPath.startsWith('http://') || imgPath.startsWith('https://');
+
     return Container(
-      width: 148,
+      width: 154,
       margin: const EdgeInsets.symmetric(horizontal: 6),
       decoration: BoxDecoration(
         color: VeloraColors.cardBg,
@@ -923,23 +1137,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             child: SizedBox(
               height: 110,
               width: double.infinity,
-              child: item.imagePath != null
-                  ? Image.asset(
-                      item.imagePath!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (ctx, err, stack) => Container(
-                        color: item.cardColor,
-                        child: Center(
-                          child: Icon(item.icon, size: 48, color: VeloraColors.limeDeep),
-                        ),
-                      ),
-                    )
-                  : Container(
-                      color: item.cardColor,
-                      child: Center(
-                        child: Icon(item.icon, size: 48, color: VeloraColors.limeDeep),
-                      ),
-                    ),
+              child: imgPath.isNotEmpty
+                  ? (isNetworkImage
+                      ? Image.network(
+                          imgPath,
+                          fit: BoxFit.cover,
+                          errorBuilder: (ctx, err, stack) => _buildProductFallbackBg(item),
+                        )
+                      : Image.asset(
+                          imgPath,
+                          fit: BoxFit.cover,
+                          errorBuilder: (ctx, err, stack) => _buildProductFallbackBg(item),
+                        ))
+                  : _buildProductFallbackBg(item),
             ),
           ),
           Padding(
@@ -948,12 +1158,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  item.unit,
+                  item.unit.isNotEmpty ? item.unit : '1 unit',
                   style: GoogleFonts.outfit(
                     fontSize: 10,
                     color: VeloraColors.textMuted,
                     fontWeight: FontWeight.w500,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -975,23 +1187,38 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             padding: const EdgeInsets.fromLTRB(12, 0, 10, 10),
             child: Row(
               children: [
-                Text(
-                  'Rs ${item.price.toStringAsFixed(2)}',
-                  style: GoogleFonts.outfit(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: VeloraColors.textPrimary,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Rs ${item.price.toStringAsFixed(2)}',
+                      style: GoogleFonts.outfit(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: VeloraColors.textPrimary,
+                      ),
+                    ),
+                    if (item.originalPrice != null && item.originalPrice! > item.price)
+                      Text(
+                        'Rs ${item.originalPrice!.toStringAsFixed(2)}',
+                        style: GoogleFonts.outfit(
+                          fontSize: 10,
+                          decoration: TextDecoration.lineThrough,
+                          color: VeloraColors.textMuted,
+                        ),
+                      ),
+                  ],
                 ),
                 const Spacer(),
                 GestureDetector(
-                  onTap: _addToCart,
+                  onTap: () => _addToCart(modelItem: item),
                   child: Container(
-                    width: 30,
-                    height: 30,
+                    width: 32,
+                    height: 32,
                     decoration: BoxDecoration(
                       color: VeloraColors.navy,
-                      borderRadius: BorderRadius.circular(9),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(Icons.add_rounded, color: Colors.white, size: 18),
                   ),
@@ -1004,207 +1231,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ─── Special Offer ────────────────────────────────────────────────────────
-
-  Widget _buildSpecialOffer() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Special Offers',
-            style: GoogleFonts.outfit(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: VeloraColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Container(
-            decoration: BoxDecoration(
-              color: VeloraColors.cardBg,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.07),
-                  blurRadius: 14,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Product image area
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                  child: SizedBox(
-                    height: 185,
-                    width: double.infinity,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Image.asset(
-                          'assests/cheese_special.jpg',
-                          fit: BoxFit.cover,
-                          errorBuilder: (ctx, err, stack) => Container(
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [Color(0xFF2D1B0E), Color(0xFF4A2C0A)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                            ),
-                            child: Center(
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  _OfferIcon(icon: Icons.breakfast_dining_rounded, color: const Color(0xFFF59E0B)),
-                                  const SizedBox(width: 14),
-                                  _OfferIcon(icon: Icons.local_drink_rounded, color: const Color(0xFF8B5CF6)),
-                                  const SizedBox(width: 14),
-                                  _OfferIcon(icon: Icons.eco_rounded, color: const Color(0xFF22C55E)),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        // Gradient overlay for badge legibility
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          height: 60,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.black.withValues(alpha: 0.35),
-                                  Colors.transparent,
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          top: 14,
-                          left: 14,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: VeloraColors.lime,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              'LIMITED TIME',
-                              style: GoogleFonts.outfit(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w800,
-                                color: VeloraColors.navy,
-                                letterSpacing: 0.8,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                // Product info
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Artisan Cheese Selection',
-                        style: GoogleFonts.outfit(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          color: VeloraColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Curated box from local farms. Perfect for your next gathering.',
-                        style: GoogleFonts.outfit(
-                          fontSize: 13,
-                          color: VeloraColors.textSecondary,
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Text(
-                            'Rs 18.00',
-                            style: GoogleFonts.outfit(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              color: VeloraColors.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Rs 24.00',
-                            style: GoogleFonts.outfit(
-                              fontSize: 14,
-                              color: VeloraColors.textMuted,
-                              decoration: TextDecoration.lineThrough,
-                            ),
-                          ),
-                          const Spacer(),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: VeloraColors.limeLight,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '25% OFF',
-                              style: GoogleFonts.outfit(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: VeloraColors.limeDeep,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: _addToCart,
-                          icon: const Icon(Icons.shopping_cart_rounded, size: 18),
-                          label: Text(
-                            'Add to Cart',
-                            style: GoogleFonts.outfit(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: VeloraColors.navy,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            elevation: 0,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+  Widget _buildProductFallbackBg(ProductModel item) {
+    IconData icon = Icons.shopping_basket_rounded;
+    Color color = const Color(0xFFFFFBEB);
+    final catLower = item.category.toLowerCase();
+    if (catLower.contains('veg') || catLower.contains('fruit')) {
+      icon = Icons.eco_rounded;
+      color = const Color(0xFFF0FDF4);
+    } else if (catLower.contains('house')) {
+      icon = Icons.home_rounded;
+      color = const Color(0xFFF8F0FA);
+    } else if (catLower.contains('beverag')) {
+      icon = Icons.local_drink_rounded;
+      color = const Color(0xFFF0F5FA);
+    } else if (catLower.contains('chill')) {
+      icon = Icons.kitchen_rounded;
+      color = const Color(0xFFF0F8FA);
+    }
+    return Container(
+      color: color,
+      child: Center(
+        child: Icon(icon, size: 44, color: VeloraColors.limeDeep),
       ),
     );
   }
@@ -1332,54 +1379,40 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ],
                     ],
                   ),
-                  if (isCart && _cartCount > 0)
-                    Positioned(
-                      top: -6,
-                      right: -8,
-                      child: Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: const BoxDecoration(
-                          color: VeloraColors.badgeRed,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          '$_cartCount',
-                          style: GoogleFonts.outfit(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
+                  if (isCart)
+                    ListenableBuilder(
+                      listenable: CartService.instance,
+                      builder: (context, _) {
+                        final count = CartService.instance.totalItemCount;
+                        if (count <= 0) return const SizedBox.shrink();
+                        return Positioned(
+                          top: -6,
+                          right: -8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                            decoration: const BoxDecoration(
+                              color: VeloraColors.badgeRed,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Text(
+                              '$count',
+                              style: GoogleFonts.outfit(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
+
                 ],
               ),
             ),
           );
         }),
       ),
-    );
-  }
-}
-
-// ─── Helper Widgets ───────────────────────────────────────────────────────────
-
-class _OfferIcon extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  const _OfferIcon({required this.icon, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 68,
-      height: 68,
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: color.withValues(alpha: 0.3), width: 1.5),
-      ),
-      child: Icon(icon, color: color, size: 32),
     );
   }
 }

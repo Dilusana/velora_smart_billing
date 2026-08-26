@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/cart_service.dart';
+import '../models/cart_item.dart' as db_cart;
 import 'home_screen.dart' show VeloraColors;
 import 'checkout_screen.dart';
 
-// ─── Cart Item Model ──────────────────────────────────────────────────────────
+// ─── Cart Item UI Model ───────────────────────────────────────────────────────
 
 class CartItem {
+  final db_cart.CartItem? source;
   final String name;
   final String description;
   final double unitPrice;
@@ -14,6 +17,7 @@ class CartItem {
   int quantity;
 
   CartItem({
+    this.source,
     required this.name,
     required this.description,
     required this.unitPrice,
@@ -35,64 +39,52 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> {
-  // Demo cart items — in a real app these come from a global state/provider
-  final List<CartItem> _items = [
-    CartItem(
-      name: 'Organic Hass Avocados',
-      description: '2 units • Organic Certified',
-      unitPrice: 2.25,
-      imagePath: 'assests/veg_fruits.png',
-      fallbackIcon: Icons.eco_rounded,
-      quantity: 2,
-    ),
-    CartItem(
-      name: 'Artisanal Sourdough',
-      description: '800g • Freshly Baked',
-      unitPrice: 6.20,
-      imagePath: 'assests/sourdough_product.jpg',
-      fallbackIcon: Icons.breakfast_dining_rounded,
-      quantity: 1,
-    ),
-    CartItem(
-      name: 'Cold-Pressed Almond Milk',
-      description: '1L • Unsweetened',
-      unitPrice: 5.50,
-      imagePath: 'assests/milk_product.jpg',
-      fallbackIcon: Icons.local_drink_rounded,
-      quantity: 1,
-    ),
-  ];
-
   final TextEditingController _couponCtrl = TextEditingController();
   double _discount = 0.0;
   bool _couponApplied = false;
   String _couponMsg = '';
 
-  double get _subtotal =>
-      _items.fold(0.0, (sum, item) => sum + item.total);
+  List<CartItem> _getDisplayItems() {
+    final dbItems = CartService.instance.items;
+    if (dbItems.isEmpty) return [];
 
-  double get _total => _subtotal - _discount;
+    return dbItems.map((item) {
+      return CartItem(
+        source: item,
+        name: item.title,
+        description: item.description.isNotEmpty ? item.description : item.category,
+        unitPrice: item.price,
+        imagePath: item.imageUrl.isNotEmpty ? item.imageUrl : null,
+        fallbackIcon: Icons.shopping_basket_rounded,
+        quantity: item.quantity,
+      );
+    }).toList();
+  }
 
-  int get _totalItems =>
-      _items.fold(0, (sum, item) => sum + item.quantity);
+  double get _subtotal => CartService.instance.subtotal;
 
-  void _increment(int i) => setState(() => _items[i].quantity++);
+  double get _total {
+    final t = _subtotal - _discount;
+    return t > 0 ? t : 0.0;
+  }
 
-  void _decrement(int i) {
-    if (_items[i].quantity > 1) {
-      setState(() => _items[i].quantity--);
+  int get _totalItems => CartService.instance.totalItemCount;
+
+  void _increment(CartItem item) {
+    if (item.source != null) {
+      CartService.instance.updateQuantity(item.source!, item.quantity + 1);
     }
   }
 
-  void _remove(int i) {
-    setState(() => _items.removeAt(i));
-    if (_items.isEmpty) {
-      setState(() {
-        _discount = 0.0;
-        _couponApplied = false;
-        _couponMsg = '';
-        _couponCtrl.clear();
-      });
+  void _decrement(CartItem item) {
+    if (item.source != null) {
+      CartService.instance.updateQuantity(item.source!, item.quantity - 1);
+    }
+  }
+
+  void _remove(CartItem item) {
+    if (item.source != null) {
+      CartService.instance.removeItem(item.source!);
     }
   }
 
@@ -126,86 +118,94 @@ class _CartScreenState extends State<CartScreen> {
     super.dispose();
   }
 
+
   // ─── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F4EE),
-      body: SafeArea(
-        child: Stack(
-          children: [
-            CustomScrollView(
-              slivers: [
-                // ── App Bar ──────────────────────────────────────────────
-                _buildAppBar(),
+    return ListenableBuilder(
+      listenable: CartService.instance,
+      builder: (context, _) {
+        final items = _getDisplayItems();
+        return Scaffold(
+          backgroundColor: const Color(0xFFF7F4EE),
+          body: SafeArea(
+            child: Stack(
+              children: [
+                CustomScrollView(
+                  slivers: [
+                    // ── App Bar ──────────────────────────────────────────────
+                    _buildAppBar(),
 
-                // ── Page Title ───────────────────────────────────────────
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-                    child: Text(
-                      _items.isEmpty
-                          ? 'My Cart (0 Items)'
-                          : 'My Cart ($_totalItems Item${_totalItems == 1 ? '' : 's'})',
-                      style: GoogleFonts.outfit(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF111827),
-                        height: 1.1,
+                    // ── Page Title ───────────────────────────────────────────
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+                        child: Text(
+                          items.isEmpty
+                              ? 'My Cart (0 Items)'
+                              : 'My Cart ($_totalItems Item${_totalItems == 1 ? '' : 's'})',
+                          style: GoogleFonts.outfit(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            color: const Color(0xFF111827),
+                            height: 1.1,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+
+                    // ── Empty state ──────────────────────────────────────────
+                    if (items.isEmpty)
+                      SliverFillRemaining(child: _buildEmptyCart()),
+
+                    // ── Cart Items ───────────────────────────────────────────
+                    if (items.isNotEmpty)
+                      SliverPadding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (ctx, i) => _CartItemCard(
+                              item: items[i],
+                              onIncrement: () => _increment(items[i]),
+                              onDecrement: () => _decrement(items[i]),
+                              onRemove: () => _remove(items[i]),
+                            ),
+                            childCount: items.length,
+                          ),
+                        ),
+                      ),
+
+                    // ── Order Summary ────────────────────────────────────────
+                    if (items.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                          child: _buildOrderSummary(),
+                        ),
+                      ),
+
+                    // ── Bottom padding ───────────────────────────────────────
+                    const SliverToBoxAdapter(child: SizedBox(height: 130)),
+                  ],
                 ),
 
-                // ── Empty state ──────────────────────────────────────────
-                if (_items.isEmpty)
-                  SliverFillRemaining(child: _buildEmptyCart()),
-
-                // ── Cart Items ───────────────────────────────────────────
-                if (_items.isNotEmpty)
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (ctx, i) => _CartItemCard(
-                          item: _items[i],
-                          onIncrement: () => _increment(i),
-                          onDecrement: () => _decrement(i),
-                          onRemove: () => _remove(i),
-                        ),
-                        childCount: _items.length,
-                      ),
-                    ),
+                // ── Proceed to Checkout ─────────────────────────────────────
+                if (items.isNotEmpty)
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: _buildCheckoutBar(),
                   ),
-
-                // ── Order Summary ────────────────────────────────────────
-                if (_items.isNotEmpty)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-                      child: _buildOrderSummary(),
-                    ),
-                  ),
-
-                // ── Bottom padding ───────────────────────────────────────
-                const SliverToBoxAdapter(child: SizedBox(height: 130)),
               ],
             ),
-
-            // ── Proceed to Checkout ─────────────────────────────────────
-            if (_items.isNotEmpty)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: _buildCheckoutBar(),
-              ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
+
 
   // ─── App Bar ───────────────────────────────────────────────────────────────
 
@@ -222,54 +222,15 @@ class _CartScreenState extends State<CartScreen> {
         child: Row(
           children: [
             // Back button
-            GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: const Icon(Icons.search_rounded,
-                    color: Color(0xFF3A5A2A), size: 20),
+            IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: Color(0xFF3A5A2A),
+                size: 20,
               ),
+              onPressed: () => Navigator.of(context).pop(),
             ),
             const Spacer(),
-            // Brand
-            Text(
-              'SmartMarket',
-              style: GoogleFonts.outfit(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF3A5A2A),
-                letterSpacing: 0.2,
-              ),
-            ),
-            const Spacer(),
-            // Avatar
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFCEE847), Color(0xFF8DC63F)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                border: Border.all(color: const Color(0xFF3A5A2A), width: 2),
-              ),
-              child: const Icon(Icons.person_rounded,
-                  color: Color(0xFF1A2D5A), size: 20),
-            ),
           ],
         ),
       ),
@@ -419,7 +380,7 @@ class _CartScreenState extends State<CartScreen> {
                       fontWeight: FontWeight.w500)),
               Text(
                 _discount > 0
-                    ? '-\$${_discount.toStringAsFixed(2)}'
+                    ? '-Rs ${_discount.toStringAsFixed(2)}'
                     : 'Rs 0.00',
                 style: GoogleFonts.outfit(
                   fontSize: 14,
@@ -645,6 +606,42 @@ class _CartItemCardState extends State<_CartItemCard>
         .animate(CurvedAnimation(parent: _scaleCtrl, curve: Curves.easeOut));
   }
 
+  Widget _buildProductImage(CartItem item) {
+    if (item.imagePath == null || item.imagePath!.trim().isEmpty) {
+      return _buildFallbackImage(item.fallbackIcon);
+    }
+    String path = item.imagePath!.trim();
+    if (path.startsWith('assets/')) {
+      path = path.replaceFirst('assets/', 'assests/');
+    }
+    final bool isNetwork = path.startsWith('http://') ||
+        path.startsWith('https://') ||
+        path.contains('cloudinary.com');
+
+    if (isNetwork) {
+      return Image.network(
+        path,
+        fit: BoxFit.cover,
+        errorBuilder: (ctx, err, stack) => _buildFallbackImage(item.fallbackIcon),
+      );
+    } else {
+      return Image.asset(
+        path,
+        fit: BoxFit.cover,
+        errorBuilder: (ctx, err, stack) => _buildFallbackImage(item.fallbackIcon),
+      );
+    }
+  }
+
+  Widget _buildFallbackImage(IconData fallbackIcon) {
+    return Container(
+      color: const Color(0xFFF0F5D8),
+      child: Center(
+        child: Icon(fallbackIcon, size: 36, color: const Color(0xFF3A5A2A)),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _scaleCtrl.dispose();
@@ -686,25 +683,7 @@ class _CartItemCardState extends State<_CartItemCard>
                 child: SizedBox(
                   width: 84,
                   height: 84,
-                  child: item.imagePath != null
-                      ? Image.asset(
-                          item.imagePath!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (ctx, err, stack) => Container(
-                            color: const Color(0xFFF0F5D8),
-                            child: Center(
-                              child: Icon(item.fallbackIcon,
-                                  size: 36, color: const Color(0xFF3A5A2A)),
-                            ),
-                          ),
-                        )
-                      : Container(
-                          color: const Color(0xFFF0F5D8),
-                          child: Center(
-                            child: Icon(item.fallbackIcon,
-                                size: 36, color: const Color(0xFF3A5A2A)),
-                          ),
-                        ),
+                  child: _buildProductImage(item),
                 ),
               ),
 

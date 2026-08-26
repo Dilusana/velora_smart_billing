@@ -341,7 +341,7 @@ class _ReceiptItemRow extends StatelessWidget {
                   width: 52, height: 52,
                   child: item.imagePath != null
                       ? Image.asset(item.imagePath!, fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
+                          errorBuilder: (_, _, _) => Container(
                             color: const Color(0xFFF0F5D8),
                             child: Icon(item.fallbackIcon, size: 24, color: const Color(0xFF3A5A2A)),
                           ))

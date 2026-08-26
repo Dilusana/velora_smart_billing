@@ -1,10 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'app_theme.dart';
 import 'cart_database.dart';
 import 'cart_item.dart';
 import 'payment_method_page.dart';
-
-enum DeliveryType { selfCheckout, storePickup }
 
 class MyCartPage extends StatefulWidget {
   const MyCartPage({super.key});
@@ -16,9 +15,16 @@ class MyCartPage extends StatefulWidget {
 class _MyCartPageState extends State<MyCartPage> {
   late Future<List<CartItem>> _cartFuture;
   final TextEditingController _promoController = TextEditingController();
-  final TextEditingController _membershipController = TextEditingController();
+  final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
-  DeliveryType _deliveryType = DeliveryType.selfCheckout;
+  final TextEditingController _addressController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+
+  bool _isRegisteredCustomer = false;
+  bool _isSearchingCustomer = false;
+  bool _customerFound = false;
+  String _searchCustomerMessage = '';
+
   bool _promoApplied = false;
   String _promoMessage = '';
 
@@ -31,8 +37,10 @@ class _MyCartPageState extends State<MyCartPage> {
   @override
   void dispose() {
     _promoController.dispose();
-    _membershipController.dispose();
+    _nameController.dispose();
     _phoneController.dispose();
+    _addressController.dispose();
+    _emailController.dispose();
     super.dispose();
   }
 
@@ -40,6 +48,126 @@ class _MyCartPageState extends State<MyCartPage> {
     setState(() {
       _cartFuture = CartDatabase.instance.getItems();
     });
+  }
+
+  Future<void> _incrementQuantity(CartItem item) async {
+    final updated = item.copyWith(quantity: item.quantity + 1);
+    await CartDatabase.instance.updateItem(updated);
+    _refreshCart();
+  }
+
+  Future<void> _decrementQuantity(CartItem item) async {
+    if (item.quantity > 1) {
+      final updated = item.copyWith(quantity: item.quantity - 1);
+      await CartDatabase.instance.updateItem(updated);
+    } else if (item.id != null) {
+      await CartDatabase.instance.deleteItem(item.id!);
+    }
+    _refreshCart();
+  }
+
+  Future<void> _removeItem(CartItem item) async {
+    if (item.id != null) {
+      await CartDatabase.instance.deleteItem(item.id!);
+      _refreshCart();
+    }
+  }
+
+  Future<void> _searchCustomerByPhone() async {
+    final phone = _phoneController.text.trim();
+    if (phone.isEmpty) return;
+
+    setState(() {
+      _isSearchingCustomer = true;
+      _searchCustomerMessage = '';
+    });
+
+    final cleanPhone = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+
+    try {
+      final firestore = FirebaseFirestore.instance;
+      
+      // 1. Search by phone in Firestore customers collection
+      var querySnap = await firestore
+          .collection('customers')
+          .where('phone', isEqualTo: cleanPhone)
+          .limit(1)
+          .get();
+
+      if (querySnap.docs.isEmpty && !cleanPhone.startsWith('+')) {
+        querySnap = await firestore
+            .collection('customers')
+            .where('phone', isEqualTo: '+94$cleanPhone')
+            .limit(1)
+            .get();
+      }
+
+      Map<String, dynamic>? data;
+      if (querySnap.docs.isNotEmpty) {
+        data = querySnap.docs.first.data();
+      } else {
+        // 2. Search by document id
+        final docSnap = await firestore.collection('customers').doc('cust_$cleanPhone').get();
+        if (docSnap.exists) {
+          data = docSnap.data();
+        }
+      }
+
+      if (data != null) {
+        final name = (data['fullName'] ?? data['name'] ?? data['customerName'] ?? data['first_name'] ?? '').toString();
+        final email = (data['email'] ?? data['gmail'] ?? '').toString();
+        final address = (data['address'] ?? '').toString();
+
+        setState(() {
+          _isSearchingCustomer = false;
+          _customerFound = true;
+          if (name.isNotEmpty) _nameController.text = name;
+          if (email.isNotEmpty) _emailController.text = email;
+          if (address.isNotEmpty) _addressController.text = address;
+          _searchCustomerMessage = '✓ Registered Customer Found: $name';
+        });
+        return;
+      }
+    } catch (_) {
+      // Fallback for offline or testing mode
+    }
+
+    // Pre-registered sample customers for instant testing
+    final mockData = {
+      '0771234567': {
+        'name': 'John Doe',
+        'email': 'johndoe@gmail.com',
+        'address': 'No 45, Galle Road, Colombo 03',
+      },
+      '+94771234567': {
+        'name': 'John Doe',
+        'email': 'johndoe@gmail.com',
+        'address': 'No 45, Galle Road, Colombo 03',
+      },
+      '0778889999': {
+        'name': 'Sarah Perera',
+        'email': 'sarah.perera@gmail.com',
+        'address': 'No 12, Kandy Road, Kiribathgoda',
+      },
+    };
+
+    final mockMatch = mockData[cleanPhone];
+    if (mockMatch != null) {
+      setState(() {
+        _isSearchingCustomer = false;
+        _customerFound = true;
+        _nameController.text = mockMatch['name']!;
+        _emailController.text = mockMatch['email']!;
+        _addressController.text = mockMatch['address']!;
+        _searchCustomerMessage = '✓ Registered Customer Found: ${mockMatch['name']}';
+      });
+    } else {
+      setState(() {
+        _isSearchingCustomer = false;
+        _customerFound = false;
+        _searchCustomerMessage = 'No customer record found for this phone number.';
+      });
+    }
   }
 
   void _applyPromo() {
@@ -73,51 +201,18 @@ class _MyCartPageState extends State<MyCartPage> {
         return 5.30;
       case 'Rice 5kg':
         return 12.50;
-      case 'Salt & Spices':
-        return 4.10;
-      case 'Sparkling Water':
-        return 1.90;
-      case 'Cold Brew Coffee':
-        return 3.80;
-      case 'Orange Juice':
-        return 2.20;
-      case 'Herbal Tea':
-        return 2.80;
-      case 'Laundry Detergent':
-        return 9.50;
-      case 'Dish Soap':
-        return 2.40;
-      case 'Floor Cleaner':
-        return 3.90;
-      case 'Paper Towels':
-        return 4.75;
-      case 'Greek Yogurt':
-        return 3.20;
-      case 'Cheddar Cheese':
-        return 4.90;
-      case 'Fresh Cream':
-        return 3.60;
-      case 'Ready Meal Bowl':
-        return 6.50;
-      case 'Frozen Peas':
-        return 2.70;
-      case 'Ice Cream Tub':
-        return 5.20;
-      case 'Vegetable Mix':
-        return 3.30;
-      case 'Frozen Pizza':
-        return 7.80;
       default:
         return 2.50;
     }
   }
 
   double _itemPrice(CartItem item) {
-    return _priceForTitle(item.title) * item.quantity;
+    final double unitPrice = item.price > 0 ? item.price : _priceForTitle(item.title);
+    return unitPrice * item.quantity;
   }
 
   double _subtotal(List<CartItem> items) {
-    return items.fold(0.0, (sum, item) => sum + _itemPrice(item));
+    return items.fold(0.0, (totalSum, item) => totalSum + _itemPrice(item));
   }
 
   double _promoDiscount() {
@@ -125,7 +220,7 @@ class _MyCartPageState extends State<MyCartPage> {
   }
 
   double _discount(double subtotal) {
-    return subtotal * 0.08 + _promoDiscount();
+    return _promoDiscount();
   }
 
   String _formattedPrice(double value) {
@@ -133,25 +228,20 @@ class _MyCartPageState extends State<MyCartPage> {
   }
 
   IconData _iconForTitle(String title) {
-    switch (title) {
-      case 'Bananas':
-      case 'Fresh Spinach':
-      case 'Red Apples':
-      case 'Vegetable Mix':
+    switch (title.toLowerCase()) {
+      case 'bananas':
+      case 'fresh spinach':
+      case 'red apples':
+      case 'tomoeto':
+      case 'tomato':
+      case 'vegetable mix':
         return Icons.eco_rounded;
-      case 'Whole Wheat Bread':
-      case 'Bread':
+      case 'whole wheat bread':
+      case 'bread':
         return Icons.bakery_dining_rounded;
-      case 'Rice 5kg':
-      case 'Frozen Pizza':
+      case 'rice 5kg':
+      case 'frozen pizza':
         return Icons.rice_bowl_rounded;
-      case 'Orange Juice':
-      case 'Sparkling Water':
-      case 'Cold Brew Coffee':
-      case 'Herbal Tea':
-      case 'Greek Yogurt':
-      case 'Fresh Cream':
-        return Icons.local_drink_rounded;
       default:
         return Icons.shopping_bag_rounded;
     }
@@ -221,71 +311,12 @@ class _MyCartPageState extends State<MyCartPage> {
     );
   }
 
-  Widget _buildDeliveryOption({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: selected ? const Color(0xFFEFF7F4) : Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: selected ? AppColors.accent : const Color(0xFFE8EFE6), width: 1.2),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: AppColors.accent.withValues(alpha: 0.12),
-                      blurRadius: 18,
-                      offset: const Offset(0, 12),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: selected ? AppColors.accent.withValues(alpha: 0.12) : const Color(0xFFF5F7FA),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: selected ? AppColors.accent : AppColors.brand, size: 24),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: selected ? AppColors.brand : AppColors.primaryText)),
-                    const SizedBox(height: 6),
-                    Text(subtitle, style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-                  ],
-                ),
-              ),
-              Icon(
-                selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
-                color: selected ? AppColors.accent : Colors.grey.shade400,
-                size: 24,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildInputField({
     required TextEditingController controller,
     required String label,
     required String hint,
     TextInputType keyboardType = TextInputType.text,
+    ValueChanged<String>? onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -295,6 +326,7 @@ class _MyCartPageState extends State<MyCartPage> {
         TextField(
           controller: controller,
           keyboardType: keyboardType,
+          onChanged: onChanged,
           decoration: InputDecoration(
             hintText: hint,
             filled: true,
@@ -307,6 +339,73 @@ class _MyCartPageState extends State<MyCartPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildRegisteredCustomerQuestion() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3FCF5),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFD3EED8)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.verified_user_rounded, color: AppColors.brand, size: 24),
+              SizedBox(width: 10),
+              Text(
+                'Are you a registered Customer?',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primaryText),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: ChoiceChip(
+                  label: const Center(child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4),
+                    child: Text('Yes', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                  )),
+                  selected: _isRegisteredCustomer,
+                  selectedColor: AppColors.brand,
+                  labelStyle: TextStyle(color: _isRegisteredCustomer ? Colors.white : AppColors.primaryText),
+                  onSelected: (val) {
+                    setState(() {
+                      _isRegisteredCustomer = true;
+                      _searchCustomerMessage = '';
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: ChoiceChip(
+                  label: const Center(child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4),
+                    child: Text('No', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                  )),
+                  selected: !_isRegisteredCustomer,
+                  selectedColor: AppColors.brand,
+                  labelStyle: TextStyle(color: !_isRegisteredCustomer ? Colors.white : AppColors.primaryText),
+                  onSelected: (val) {
+                    setState(() {
+                      _isRegisteredCustomer = false;
+                      _searchCustomerMessage = '';
+                      _customerFound = false;
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -345,14 +444,16 @@ class _MyCartPageState extends State<MyCartPage> {
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        Text(
-          _promoMessage,
-          style: TextStyle(
-            color: _promoApplied ? AppColors.accent : AppColors.error,
-            fontSize: 13,
+        if (_promoMessage.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            _promoMessage,
+            style: TextStyle(
+              color: _promoApplied ? AppColors.accent : AppColors.error,
+              fontSize: 13,
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -360,8 +461,7 @@ class _MyCartPageState extends State<MyCartPage> {
   Widget _buildOrderSummary(List<CartItem> items) {
     final subtotal = _subtotal(items);
     final discount = _discount(subtotal);
-    final tax = subtotal * 0.08;
-    final total = subtotal - discount + tax;
+    final total = (subtotal - discount).clamp(0.0, double.infinity);
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -385,40 +485,72 @@ class _MyCartPageState extends State<MyCartPage> {
               ),
             )
           else
-            ...items.map((item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 58,
-                        height: 58,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF5F7FA),
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        child: Icon(_iconForTitle(item.title), color: AppColors.brand, size: 26),
+            ...items.map((item) {
+              final double unitPrice = item.price > 0 ? item.price : _priceForTitle(item.title);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F7FA),
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(item.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-                            const SizedBox(height: 4),
-                            Text('x${item.quantity} unit', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-                          ],
-                        ),
+                      child: Icon(_iconForTitle(item.title), color: AppColors.brand, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(item.title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 2),
+                          Text('${_formattedPrice(unitPrice)} each', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                        ],
                       ),
-                      Text(_formattedPrice(_itemPrice(item)), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                    ],
-                  ),
-                )),
+                    ),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove_circle_outline_rounded, size: 20, color: AppColors.brand),
+                          onPressed: () => _decrementQuantity(item),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Text('${item.quantity}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline_rounded, size: 20, color: AppColors.brand),
+                          onPressed: () => _incrementQuantity(item),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
+                          onPressed: () => _removeItem(item),
+                          padding: const EdgeInsets.only(left: 6),
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 10),
+                    Text(_formattedPrice(_itemPrice(item)), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              );
+            }),
           const Divider(height: 32, thickness: 1.1),
           _buildSummaryRow('Subtotal', _formattedPrice(subtotal)),
           const SizedBox(height: 12),
-          _buildSummaryRow('Discount (Member)', '- ${_formattedPrice(discount)}', color: AppColors.accent),
-          const SizedBox(height: 12),
-          _buildSummaryRow('Tax', _formattedPrice(tax), color: AppColors.brand),
+          _buildSummaryRow(
+            'Discount',
+            discount > 0 ? '- ${_formattedPrice(discount)}' : 'Rs.0',
+            color: discount > 0 ? AppColors.accent : Colors.grey.shade600,
+          ),
           const SizedBox(height: 12),
           _buildSummaryRow('Total', _formattedPrice(total), weight: FontWeight.w800),
         ],
@@ -450,33 +582,72 @@ class _MyCartPageState extends State<MyCartPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Delivery Type', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              _buildDeliveryOption(
-                icon: Icons.shopping_bag_rounded,
-                title: 'Self Checkout',
-                subtitle: 'Bag your items at the station',
-                selected: _deliveryType == DeliveryType.selfCheckout,
-                onTap: () => setState(() => _deliveryType = DeliveryType.selfCheckout),
-              ),
-              const SizedBox(width: 16),
-              _buildDeliveryOption(
-                icon: Icons.storefront_rounded,
-                title: 'Store Pickup',
-                subtitle: 'Ready in 15 minutes',
-                selected: _deliveryType == DeliveryType.storePickup,
-                onTap: () => setState(() => _deliveryType = DeliveryType.storePickup),
-              ),
-            ],
-          ),
-          const SizedBox(height: 28),
+          _buildRegisteredCustomerQuestion(),
+          const SizedBox(height: 24),
           const Text('Customer Information', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 18),
-          _buildInputField(controller: _membershipController, label: 'Membership Number (Optional)', hint: 'Membership Number (Optional)'),
+          _buildInputField(
+            controller: _nameController,
+            label: 'Enter your Name',
+            hint: 'Mr.john doe',
+          ),
           const SizedBox(height: 18),
-          _buildInputField(controller: _phoneController, label: 'Phone Number (Optional)', hint: 'Phone Number (Optional)', keyboardType: TextInputType.phone),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: _buildInputField(
+                  controller: _phoneController,
+                  label: 'Enter your Phone Number',
+                  hint: '7xx xxx xxx',
+                  keyboardType: TextInputType.phone,
+                  onChanged: (val) {
+                    if (_isRegisteredCustomer && val.trim().length >= 9) {
+                      _searchCustomerByPhone();
+                    }
+                  },
+                ),
+              ),
+              if (_isRegisteredCustomer) ...[
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: _isSearchingCustomer ? null : _searchCustomerByPhone,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.brand,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  ),
+                  child: _isSearchingCustomer
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('Find', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white)),
+                ),
+              ],
+            ],
+          ),
+          if (_searchCustomerMessage.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              _searchCustomerMessage,
+              style: TextStyle(
+                color: _customerFound ? AppColors.brand : Colors.redAccent,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          const SizedBox(height: 18),
+          _buildInputField(
+            controller: _addressController,
+            label: 'Enter your Address here',
+            hint: 'No. 123, Main Street, Colombo',
+          ),
+          const SizedBox(height: 18),
+          _buildInputField(
+            controller: _emailController,
+            label: 'Enter your Gmail Address here',
+            hint: '@gmail.com',
+            keyboardType: TextInputType.emailAddress,
+          ),
           const SizedBox(height: 28),
           _buildPromotions(),
         ],
@@ -519,7 +690,7 @@ class _MyCartPageState extends State<MyCartPage> {
                                   ),
                                   const SizedBox(width: 24),
                                   SizedBox(
-                                    width: 420,
+                                    width: 440,
                                     child: SingleChildScrollView(
                                       child: _buildOrderSummary(items),
                                     ),
@@ -545,18 +716,18 @@ class _MyCartPageState extends State<MyCartPage> {
                               : () {
                                   final sub = _subtotal(items);
                                   final disc = _discount(sub);
-                                  final tx = sub * 0.08;
-                                  final phone = _phoneController.text.trim();
-                                  final membership = _membershipController.text.trim();
+                                  const tx = 0.0;
+                                  final nameInput = _nameController.text.trim();
+                                  final phoneInput = _phoneController.text.trim();
 
-                                  String? custId;
-                                  String? custName;
-                                  if (membership.isNotEmpty) {
-                                    custId = 'cust_$membership';
-                                    custName = 'Member $membership';
-                                  } else if (phone.isNotEmpty) {
-                                    custId = 'cust_$phone';
-                                    custName = 'Customer ($phone)';
+                                  String custId = 'cust_kiosk';
+                                  String custName = 'Kiosk Customer';
+
+                                  if (phoneInput.isNotEmpty) {
+                                    custId = phoneInput.startsWith('cust_') ? phoneInput : 'cust_$phoneInput';
+                                    custName = nameInput.isNotEmpty ? nameInput : 'Customer ($phoneInput)';
+                                  } else if (nameInput.isNotEmpty) {
+                                    custName = nameInput;
                                   }
 
                                   Navigator.of(context).push(
@@ -569,6 +740,7 @@ class _MyCartPageState extends State<MyCartPage> {
                                         itemCount: items.length,
                                         customerId: custId,
                                         customerName: custName,
+                                        customerPhone: phoneInput,
                                         userName: 'Kiosk User',
                                       ),
                                     ),

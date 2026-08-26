@@ -61,15 +61,29 @@ class _CategoryCardState extends State<CategoryCard> {
               child: Stack(
                 children: [
                   Positioned.fill(
-                    child: Image.asset(
-                      category.imageAsset,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          color: Colors.black.withValues(alpha: 0.35),
-                        );
-                      },
-                    ),
+                    child: category.isWebImage
+                        ? Image.network(
+                            category.imageAsset,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: Colors.black.withValues(alpha: 0.35),
+                              );
+                            },
+                          )
+                        : category.isAssetImage
+                            ? Image.asset(
+                                category.imageAsset,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    color: Colors.black.withValues(alpha: 0.35),
+                                  );
+                                },
+                              )
+                            : Container(
+                                color: const Color(0xFF1B8A3D).withValues(alpha: 0.85),
+                              ),
                   ),
                   Positioned.fill(
                     child: Container(

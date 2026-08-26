@@ -31,6 +31,7 @@ class ProductModel {
   final String name;
   final String description;
   final String category;
+  final String categoryId;
   final double price;
   final int stock;
   final String imageUrl;
@@ -46,6 +47,7 @@ class ProductModel {
     required this.name,
     required this.description,
     required this.category,
+    this.categoryId = '',
     required this.price,
     required this.stock,
     required this.imageUrl,
@@ -67,17 +69,31 @@ class ProductModel {
   }
 
   factory ProductModel.fromMap(Map<String, dynamic> map, {String? docId}) {
+    final catName = (map['category'] ??
+            map['categoryName'] ??
+            map['category_name'] ??
+            map['categoryTitle'] ??
+            map['category_title'] ??
+            '')
+        .toString();
+    final catId = (map['categoryId'] ??
+            map['category_id'] ??
+            map['parent_category_id'] ??
+            '')
+        .toString();
+
     return ProductModel(
       id: docId ?? (map['id']?.toString() ?? ''),
       name: (map['name'] ?? map['title'] ?? '').toString(),
       description: (map['description'] ?? map['subtitle'] ?? '').toString(),
-      category: (map['category'] ?? map['categoryName'] ?? map['categoryId'] ?? '').toString(),
-      price: _parsePrice(map['price'] ?? map['sellingPrice']),
-      stock: _parseStock(map['stock'] ?? map['quantity']),
-      imageUrl: (map['imageUrl'] ?? map['image'] ?? map['imageAsset'] ?? '').toString(),
+      category: catName.isNotEmpty ? catName : catId,
+      categoryId: catId,
+      price: _parsePrice(map['price'] ?? map['sellingPrice'] ?? map['retail_price'] ?? map['unit_price']),
+      stock: _parseStock(map['stock'] ?? map['quantity'] ?? map['stock_quantity']),
+      imageUrl: (map['imageUrl'] ?? map['image'] ?? map['imageAsset'] ?? map['image_url'] ?? '').toString(),
       status: (map['status'] ?? 'active').toString(),
-      createdAt: _parseDateTime(map['createdAt']),
-      updatedAt: _parseDateTime(map['updatedAt']),
+      createdAt: _parseDateTime(map['createdAt'] ?? map['created_at']),
+      updatedAt: _parseDateTime(map['updatedAt'] ?? map['updated_at']),
       sku: (map['sku'] ?? '').toString(),
       cost: _parsePrice(map['cost']),
       unit: (map['unit'] ?? '').toString(),
@@ -90,6 +106,7 @@ class ProductModel {
       'name': name,
       'description': description,
       'category': category,
+      'categoryId': categoryId,
       'price': price,
       'stock': stock,
       'imageUrl': imageUrl,
@@ -107,6 +124,7 @@ class ProductModel {
     String? name,
     String? description,
     String? category,
+    String? categoryId,
     double? price,
     int? stock,
     String? imageUrl,
@@ -122,6 +140,7 @@ class ProductModel {
       name: name ?? this.name,
       description: description ?? this.description,
       category: category ?? this.category,
+      categoryId: categoryId ?? this.categoryId,
       price: price ?? this.price,
       stock: stock ?? this.stock,
       imageUrl: imageUrl ?? this.imageUrl,

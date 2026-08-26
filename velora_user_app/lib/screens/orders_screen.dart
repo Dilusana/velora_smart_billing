@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../repositories/order_repository.dart';
+import '../repositories/user_repository.dart';
+import '../models/order_model.dart';
 import 'order_receipt_screen.dart';
 import 'order_tracker_screen.dart';
+
 
 // ─── Order Model ──────────────────────────────────────────────────────────────
 
@@ -165,8 +169,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   static const _filters = ['All', 'Processing', 'Complete', 'Cancelled'];
 
-  List<Order> get _filtered {
-    var list = demoOrders;
+  List<Order> _getFilteredOrders(List<Order> sourceList) {
+    var list = sourceList;
     if (_selectedFilter == 1) list = list.where((o) => o.status == OrderStatus.processing).toList();
     if (_selectedFilter == 2) list = list.where((o) => o.status == OrderStatus.completed).toList();
     if (_selectedFilter == 3) list = list.where((o) => o.status == OrderStatus.cancelled).toList();
@@ -177,6 +181,42 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return list;
   }
 
+  Order _mapUserOrder(UserOrderModel firestoreOrder) {
+    OrderStatus status = OrderStatus.processing;
+    final st = firestoreOrder.status.toLowerCase();
+    if (st.contains('completed') || st.contains('delivered')) {
+      status = OrderStatus.completed;
+    } else if (st.contains('cancel')) {
+      status = OrderStatus.cancelled;
+    }
+
+    String formattedDate = 'Just Now';
+    if (firestoreOrder.createdAt != null) {
+      final d = firestoreOrder.createdAt!;
+      formattedDate = '${d.day}/${d.month}/${d.year} ${d.hour}:${d.minute.toString().padLeft(2, '0')}';
+    }
+
+    final items = firestoreOrder.items.map((i) => OrderLineItem(
+      name: i.productName,
+      unit: '${i.quantity} x Rs ${i.price.toStringAsFixed(2)}',
+      price: i.price,
+      qty: i.quantity,
+      fallbackIcon: Icons.shopping_basket_rounded,
+    )).toList();
+
+    return Order(
+      id: firestoreOrder.id,
+      date: formattedDate,
+      status: status,
+      subtotal: firestoreOrder.subtotal,
+      tax: 0.0,
+      discount: firestoreOrder.discount,
+      paymentMethod: firestoreOrder.paymentMethod,
+      deliveryAddress: firestoreOrder.deliveryAddress,
+      items: items,
+    );
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
@@ -185,11 +225,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _filtered;
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F3EB),
-      body: SafeArea(
-        child: CustomScrollView(
+    return StreamBuilder<List<UserOrderModel>>(
+      stream: OrderRepository.instance.getCustomerOrdersStream(UserRepository.defaultUserId),
+      builder: (context, snapshot) {
+        List<Order> allOrders = [];
+        if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+          allOrders = snapshot.data!.map(_mapUserOrder).toList();
+        } else {
+          allOrders = demoOrders;
+        }
+
+        final filtered = _getFilteredOrders(allOrders);
+
+        return Scaffold(
+          backgroundColor: const Color(0xFFF5F3EB),
+          body: SafeArea(
+            child: CustomScrollView(
+
           slivers: [
             // ── App Bar ─────────────────────────────────────────────────
             SliverAppBar(
@@ -328,7 +380,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
         ),
       ),
     );
+  },
+);
   }
+
 }
 
 // ─── Order Card ───────────────────────────────────────────────────────────────
@@ -417,7 +472,7 @@ class _OrderCard extends StatelessWidget {
                         child: ClipOval(
                           child: item.imagePath != null
                               ? Image.asset(item.imagePath!, fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Icon(item.fallbackIcon, size: 18, color: const Color(0xFF3A5A2A)))
+                                  errorBuilder: (_, _, _) => Icon(item.fallbackIcon, size: 18, color: const Color(0xFF3A5A2A)))
                               : Icon(item.fallbackIcon, size: 18, color: const Color(0xFF3A5A2A)),
                         ),
                       ),

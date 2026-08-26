@@ -77,7 +77,11 @@ class _CategoryListingPageState extends State<CategoryListingPage> {
     
     // First filter by category
     var categoryProducts = rawProducts.where((p) {
-      return KioskProductRepository.instance.productMatchesCategory(p, widget.category.title);
+      return KioskProductRepository.instance.productMatchesCategory(
+        p,
+        widget.category.title,
+        categoryId: widget.category.id,
+      );
     }).toList();
 
     // If query is empty, return category filtered products
