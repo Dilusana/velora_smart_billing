@@ -166,7 +166,7 @@ class _OrdersPageState extends ConsumerState<OrdersPage> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         const Text(
-          'Orders',
+          'Sales',
           style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1A2332)),
         ),
         Row(
@@ -214,12 +214,13 @@ class _OrdersPageState extends ConsumerState<OrdersPage> {
         const SizedBox(width: 16),
         Expanded(
           child: DropdownButtonFormField<String>(
+            isExpanded: true,
             value: _statusFilter,
             decoration: InputDecoration(
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             ),
             items: ['All', 'Pending', 'Processing', 'Shipped', 'Completed', 'Cancelled']
-                .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis)))
                 .toList(),
             onChanged: (val) => setState(() => _statusFilter = val!),
           ),
@@ -227,12 +228,13 @@ class _OrdersPageState extends ConsumerState<OrdersPage> {
         const SizedBox(width: 16),
         Expanded(
           child: DropdownButtonFormField<String>(
+            isExpanded: true,
             value: _paymentFilter,
             decoration: InputDecoration(
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             ),
             items: ['All', 'Cash', 'Card', 'QR']
-                .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis)))
                 .toList(),
             onChanged: (val) => setState(() => _paymentFilter = val!),
           ),

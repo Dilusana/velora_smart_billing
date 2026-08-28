@@ -88,6 +88,7 @@ class ProductRepository {
       status: data['status']?.toString() ?? 'active',
       imageUrl: data['imageUrl']?.toString() ?? '',
       description: data['description']?.toString() ?? '',
+      expiryDate: _parseTimestamp(data['expiryDate'] ?? data['expiry_date'] ?? data['expiry'] ?? data['expirationDate'] ?? data['expDate']),
       createdAt: _parseTimestamp(data['createdAt']),
       updatedAt: _parseTimestamp(data['updatedAt']),
     );
@@ -106,6 +107,16 @@ class ProductRepository {
       'status': product.status,
       'imageUrl': product.imageUrl,
       'description': product.description,
+      'expiryDate': product.expiryDate != null ? Timestamp.fromDate(product.expiryDate!) : null,
     };
+  }
+
+  /// Batch delete multiple products by ID
+  Future<void> batchDeleteProducts(List<String> ids) async {
+    final batch = _firestore.batch();
+    for (final id in ids) {
+      batch.delete(_products.doc(id));
+    }
+    await batch.commit();
   }
 }

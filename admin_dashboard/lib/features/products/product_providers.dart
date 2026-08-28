@@ -69,6 +69,19 @@ class FirestoreProductsNotifier extends AsyncNotifier<List<ProductModel>> {
       rethrow;
     }
   }
+
+  /// Delete multiple products from Firestore and update local state immediately.
+  Future<void> batchDelete(List<String> ids) async {
+    final current = state.value ?? [];
+    final idSet = ids.toSet();
+    state = AsyncData(current.where((p) => !idSet.contains(p.id)).toList());
+    try {
+      await _repo.batchDeleteProducts(ids);
+    } catch (e) {
+      state = AsyncData(current);
+      rethrow;
+    }
+  }
 }
 
 /// The main products provider used throughout the app.

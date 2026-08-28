@@ -209,7 +209,7 @@ class _CategoryCardState extends ConsumerState<_CategoryCard> {
         transform: Matrix4.identity()
           ..translate(0.0, _isHovered ? -4.0 : 0.0),
         child: GestureDetector(
-          onTap: () => context.go('/products?category=${cat.id}'),
+          onTap: () => context.go('/products?category=${Uri.encodeComponent(cat.name)}'),
           child: Card(
             elevation: _isHovered ? 10 : 2,
             shadowColor: AppColors.primary.withValues(alpha: 0.18),

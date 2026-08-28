@@ -117,7 +117,7 @@ class ProductRepository {
     ),
   ];
 
-  /// Streams real-time active products from Firestore with fallback
+  /// Streams real-time active products from Firestore with fallback (excludes expired products)
   Stream<List<ProductModel>> getProductsStream() {
     return _productsRef.snapshots().map((snapshot) {
       if (snapshot.docs.isEmpty) {
@@ -125,17 +125,31 @@ class ProductRepository {
       }
       final list = snapshot.docs
           .map((doc) => ProductModel.fromFirestore(doc))
-          .where((p) => p.isActive)
+          .where((p) => p.isActive && !p.isExpired)
           .toList();
       if (list.isEmpty) {
-        // If snapshot has docs but isActive filtered them all, include all parsed docs
-        final allDocs = snapshot.docs.map((doc) => ProductModel.fromFirestore(doc)).toList();
+        // If snapshot has docs but isActive filtered them all, only include non-expired docs
+        final allDocs = snapshot.docs
+            .map((doc) => ProductModel.fromFirestore(doc))
+            .where((p) => !p.isExpired)
+            .toList();
         return allDocs.isNotEmpty ? allDocs : fallbackProducts;
       }
       return list;
     }).handleError((error) {
       return fallbackProducts;
     });
+  }
+
+  /// Get single product by ID (from Firestore or fallback)
+  Future<ProductModel?> getProductById(String id) async {
+    try {
+      final doc = await _productsRef.doc(id).get();
+      if (doc.exists) {
+        return ProductModel.fromFirestore(doc);
+      }
+    } catch (_) {}
+    return fallbackProducts.where((p) => p.id == id).firstOrNull;
   }
 
   /// Filters products by category (matching Category ID or Category Name)

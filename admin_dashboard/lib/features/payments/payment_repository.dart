@@ -60,4 +60,18 @@ class PaymentRepository {
       if (refundAmount != null) 'refundAmount': refundAmount,
     });
   }
+
+  /// Update existing payment
+  Future<void> updatePayment(PaymentModel payment) async {
+    final docRef = _paymentRef.doc(payment.id);
+    final doc = await docRef.get();
+    final target = doc.exists ? docRef : _paymentsRef.doc(payment.id);
+    await target.set(payment.toMap(), SetOptions(merge: true));
+  }
+
+  /// Delete payment
+  Future<void> deletePayment(String id) async {
+    await _paymentRef.doc(id).delete();
+    await _paymentsRef.doc(id).delete();
+  }
 }

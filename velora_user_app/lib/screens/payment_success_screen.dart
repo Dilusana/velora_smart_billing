@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'order_tracker_screen.dart';
 import 'orders_screen.dart';
+import '../services/recommendation_service.dart';
+import '../widgets/recommended_products_section.dart';
 
 // ─── Payment Success Screen ───────────────────────────────────────────────────
 
@@ -389,6 +391,20 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                     ),
                   ),
 
+                  const SizedBox(height: 24),
+
+                  // ── Customers Also Buy (Recommendations) ───────────────
+                  FadeTransition(
+                    opacity: _cardAnim,
+                    child: RecommendedProductsSection(
+                      title: 'Customers Also Buy',
+                      subtitle: 'Popular items you might need for your next basket',
+                      badgeText: 'FRESH PICKS',
+                      type: RecommendationSectionType.postPurchase,
+                      fetchProducts: () => RecommendationService.instance.getPopularProducts(limit: 6),
+                    ),
+                  ),
+
                   const SizedBox(height: 28),
 
                   // ── Track Order Button ─────────────────────────────────
@@ -402,7 +418,16 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                             onTap: () => Navigator.of(context).push(
                               PageRouteBuilder(
                                 pageBuilder: (ctx, anim, _) => OrderTrackerScreen(
-                                  order: demoOrders[1], // Processing order
+                                  orderId: widget.orderId,
+                                  order: Order(
+                                    id: widget.orderId,
+                                    date: 'Just Now',
+                                    status: OrderStatus.processing,
+                                    subtotal: widget.totalPaid,
+                                    paymentMethod: 'Card Payment',
+                                    deliveryAddress: 'Home Delivery',
+                                    items: const [],
+                                  ),
                                 ),
                                 transitionsBuilder: (ctx, anim, _, child) => SlideTransition(
                                   position: Tween<Offset>(begin: const Offset(1.0, 0.0), end: Offset.zero)

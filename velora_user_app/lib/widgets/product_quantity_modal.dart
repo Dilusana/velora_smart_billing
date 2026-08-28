@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/cart_service.dart';
+import '../services/user_activity_service.dart';
 
 class WeightOption {
   final String label;
@@ -165,6 +166,12 @@ class _ProductQuantityModalState extends State<ProductQuantityModal> {
       price: _isKgProduct ? (widget.basePrice * _selectedWeight.kgFactor) : widget.basePrice,
       quantity: _quantity,
       imageUrl: widget.imageUrl,
+    );
+
+    UserActivityService.instance.logAddToCart(
+      productId: widget.productId,
+      productName: widget.productName,
+      categoryName: widget.category,
     );
 
     Navigator.of(context).pop();

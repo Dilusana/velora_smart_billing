@@ -1,24 +1,39 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:velora_user_app/main.dart';
+import 'package:velora_user_app/models/cart_item.dart';
 
 void main() {
-  testWidgets('VeloraApp splash screen renders smoke test', (WidgetTester tester) async {
-    // Build VeloraApp and trigger initial frame.
-    await tester.pumpWidget(const VeloraApp());
+  testWidgets('Renders Cart item widget and calculates total price', (WidgetTester tester) async {
+    const item = CartItem(
+      productId: 'prod_100',
+      title: 'Organic Green Apples',
+      description: 'Fresh organic green apples from Nuwara Eliya',
+      price: 650.0,
+      quantity: 2,
+      category: 'Fruits',
+    );
 
-    // Verify that the splash screen displays VELORA title and tagline.
-    expect(find.text('VELORA'), findsOneWidget);
-    expect(find.text('Freshness. Simplified.'), findsOneWidget);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Text(item.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text('Rs.${item.price.toStringAsFixed(0)}'),
+                Text('Qty: ${item.quantity}'),
+                Text('Total: Rs.${(item.price * item.quantity).toStringAsFixed(0)}'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
 
-    // Complete pending splash screen delayed timers
-    await tester.pump(const Duration(seconds: 4));
+    expect(find.text('Organic Green Apples'), findsOneWidget);
+    expect(find.text('Rs.650'), findsOneWidget);
+    expect(find.text('Qty: 2'), findsOneWidget);
+    expect(find.text('Total: Rs.1300'), findsOneWidget);
   });
 }

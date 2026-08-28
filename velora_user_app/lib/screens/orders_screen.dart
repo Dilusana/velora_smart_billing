@@ -39,6 +39,11 @@ class Order {
   final double discount;
   final String paymentMethod;
   final String deliveryAddress;
+  final String deliveryType;
+  final String driverName;
+  final String driverPhone;
+  final String employeeName;
+  final String branch;
 
   const Order({
     required this.id,
@@ -50,10 +55,16 @@ class Order {
     this.discount = 0.0,
     required this.paymentMethod,
     required this.deliveryAddress,
+    this.deliveryType = 'delivery',
+    this.driverName = '',
+    this.driverPhone = '',
+    this.employeeName = '',
+    this.branch = 'Main Branch',
   });
 
   double get total => subtotal + tax - discount;
   int get itemCount => items.fold(0, (s, i) => s + i.qty);
+  bool get isPickup => deliveryType.toLowerCase().contains('pickup') || deliveryAddress.toLowerCase().contains('pickup');
 }
 
 // ─── Demo Orders ──────────────────────────────────────────────────────────────
@@ -68,6 +79,11 @@ final List<Order> demoOrders = [
     discount: 1.00,
     paymentMethod: 'Visa ending in 4542',
     deliveryAddress: '123 Green Lane, Freshville',
+    deliveryType: 'delivery',
+    driverName: 'Kamal Perera',
+    driverPhone: '+94 77 123 4567',
+    employeeName: 'Kamal Perera',
+    branch: 'Colombo 03 Branch',
     items: const [
       OrderLineItem(
         name: 'Organic Hass Avocados',
@@ -102,6 +118,11 @@ final List<Order> demoOrders = [
     discount: 0.00,
     paymentMethod: 'Mastercard ending in 7781',
     deliveryAddress: '45 Market Street, Greentown',
+    deliveryType: 'delivery',
+    driverName: '',
+    driverPhone: '',
+    employeeName: '',
+    branch: 'Main Supermarket',
     items: const [
       OrderLineItem(
         name: 'Baby Spinach',
@@ -141,6 +162,11 @@ final List<Order> demoOrders = [
     subtotal: 7.25,
     paymentMethod: 'Visa ending in 4542',
     deliveryAddress: '123 Green Lane, Freshville',
+    deliveryType: 'pickup',
+    driverName: '',
+    driverPhone: '',
+    employeeName: '',
+    branch: 'Main Supermarket',
     items: const [
       OrderLineItem(
         name: 'Wildflower Honey',
@@ -201,8 +227,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
       unit: '${i.quantity} x Rs ${i.price.toStringAsFixed(2)}',
       price: i.price,
       qty: i.quantity,
+      imagePath: i.imageUrl.isNotEmpty ? i.imageUrl : null,
       fallbackIcon: Icons.shopping_basket_rounded,
     )).toList();
+
+    final delType = firestoreOrder.deliveryType.isNotEmpty
+        ? firestoreOrder.deliveryType
+        : (firestoreOrder.deliveryAddress.toLowerCase().contains('pickup') ? 'pickup' : 'delivery');
 
     return Order(
       id: firestoreOrder.id,
@@ -213,6 +244,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
       discount: firestoreOrder.discount,
       paymentMethod: firestoreOrder.paymentMethod,
       deliveryAddress: firestoreOrder.deliveryAddress,
+      deliveryType: delType,
+      driverName: firestoreOrder.driverName,
+      driverPhone: firestoreOrder.driverPhone,
+      employeeName: firestoreOrder.employeeName,
+      branch: firestoreOrder.branch,
       items: items,
     );
   }
@@ -265,11 +301,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           borderRadius: BorderRadius.circular(10),
                           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))],
                         ),
-                        child: const Icon(Icons.search_rounded, color: Color(0xFF3A5A2A), size: 20),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF3A5A2A), size: 18),
                       ),
                     ),
-                    const Spacer(),
-                    Text('SmartMarket', style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.w800, color: const Color(0xFF3A5A2A))),
                     const Spacer(),
                     Container(
                       width: 36, height: 36,

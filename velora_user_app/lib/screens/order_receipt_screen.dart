@@ -339,15 +339,41 @@ class _ReceiptItemRow extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 child: SizedBox(
                   width: 52, height: 52,
-                  child: item.imagePath != null
-                      ? Image.asset(item.imagePath!, fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Container(
-                            color: const Color(0xFFF0F5D8),
-                            child: Icon(item.fallbackIcon, size: 24, color: const Color(0xFF3A5A2A)),
-                          ))
-                      : Container(
+                  child: () {
+                    final p = item.imagePath;
+                    if (p == null || p.trim().isEmpty) {
+                      return Container(
+                        color: const Color(0xFFF0F5D8),
+                        child: Icon(item.fallbackIcon, size: 24, color: const Color(0xFF3A5A2A)),
+                      );
+                    }
+                    final isNetwork = p.startsWith('http://') ||
+                        p.startsWith('https://') ||
+                        p.contains('cloudinary.com') ||
+                        p.contains('firebasestorage.googleapis.com');
+                    if (isNetwork) {
+                      return Image.network(
+                        p,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => Container(
                           color: const Color(0xFFF0F5D8),
-                          child: Icon(item.fallbackIcon, size: 24, color: const Color(0xFF3A5A2A))),
+                          child: Icon(item.fallbackIcon, size: 24, color: const Color(0xFF3A5A2A)),
+                        ),
+                      );
+                    }
+                    String formatted = p.trim();
+                    if (formatted.startsWith('assets/')) {
+                      formatted = formatted.replaceFirst('assets/', 'assests/');
+                    }
+                    return Image.asset(
+                      formatted,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        color: const Color(0xFFF0F5D8),
+                        child: Icon(item.fallbackIcon, size: 24, color: const Color(0xFF3A5A2A)),
+                      ),
+                    );
+                  }(),
                 ),
               ),
               const SizedBox(width: 12),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:toastification/toastification.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/data/models.dart';
@@ -71,17 +72,21 @@ class _InventoryDetailPageState extends ConsumerState<InventoryDetailPage>
     final fifoAsync = ref.watch(productFifoStatsProvider(product.id));
     final currentBatchCost = fifoAsync.value?.fifoCostPrice;
 
-    // Compute expiry status from batches
+    // Compute expiry status from product or batches
+    DateTime? earliestExpiry = product.expiryDate;
     String expiryStatus = 'N/A';
-    DateTime? earliestExpiry;
     batchesAsync.whenData((batches) {
       final active = batches.where((b) => b.status == 'active');
       if (active.isNotEmpty) {
-        earliestExpiry = active.map((b) => b.expiryDate).reduce((a, b) => a.isBefore(b) ? a : b);
-        final diff = earliestExpiry!.difference(DateTime.now()).inDays;
-        expiryStatus = diff < 0 ? 'Expired' : diff <= 5 ? 'Expiring Soon' : 'Normal';
+        final batchExpiry = active.map((b) => b.expiryDate).reduce((a, b) => a.isBefore(b) ? a : b);
+        earliestExpiry ??= batchExpiry;
       }
     });
+
+    if (earliestExpiry != null) {
+      final diff = earliestExpiry!.difference(DateTime.now()).inDays;
+      expiryStatus = diff < 0 ? 'Expired' : diff <= 5 ? 'Expiring Soon' : 'Normal';
+    }
 
     final int activeBatches = batchesAsync.value?.where((b) => b.status == 'active').length ?? 0;
 
@@ -126,6 +131,7 @@ class _InventoryDetailPageState extends ConsumerState<InventoryDetailPage>
               expiryStatus: expiryStatus, 
               earliestExpiry: earliestExpiry,
               currentBatchCost: currentBatchCost,
+              onUpdateExpiry: () => _showUpdateExpiryDialog(context, product, earliestExpiry),
             ),
             const SizedBox(height: 16),
 
@@ -137,6 +143,7 @@ class _InventoryDetailPageState extends ConsumerState<InventoryDetailPage>
               activeBatches: activeBatches,
               earliestExpiry: earliestExpiry,
               expiryStatus: expiryStatus,
+              cost: product.cost,
             ),
             const SizedBox(height: 20),
 
@@ -204,6 +211,145 @@ class _InventoryDetailPageState extends ConsumerState<InventoryDetailPage>
     ));
   }
 
+  Future<void> _showUpdateExpiryDialog(
+      BuildContext context, ProductModel product, DateTime? currentExpiry) async {
+    final dateFmt = DateFormat('dd MMM yyyy');
+    DateTime? selectedDate = product.expiryDate ?? currentExpiry;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  const Icon(Icons.event_outlined, color: AppColors.primary),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Adjust Expiry Date',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(product.name,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  Text('SKU: ${product.sku}',
+                      style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                  const SizedBox(height: 16),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate ?? DateTime.now().add(const Duration(days: 90)),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2040),
+                      );
+                      if (picked != null) {
+                        setDialogState(() {
+                          selectedDate = picked;
+                        });
+                      }
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Select Expiry Date',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.calendar_month_outlined),
+                      ),
+                      child: Text(
+                        selectedDate != null
+                            ? dateFmt.format(selectedDate!)
+                            : 'No expiry date set',
+                        style: TextStyle(
+                          color: selectedDate != null ? null : AppColors.textMuted,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (selectedDate != null) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.clear, size: 16, color: Colors.red),
+                        label: const Text('Clear Expiry Date',
+                            style: TextStyle(color: Colors.red, fontSize: 12)),
+                        onPressed: () {
+                          setDialogState(() {
+                            selectedDate = null;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    try {
+                      await FirebaseFirestore.instance
+                          .collection('products')
+                          .doc(product.id)
+                          .update({
+                        'expiryDate': selectedDate != null
+                            ? Timestamp.fromDate(selectedDate!)
+                            : FieldValue.delete(),
+                        'updatedAt': FieldValue.serverTimestamp(),
+                      });
+                      ref.invalidate(firestoreProductsProvider);
+                      if (context.mounted) {
+                        toastification.show(
+                          context: context,
+                          type: ToastificationType.success,
+                          title: const Text('Expiry Date Updated'),
+                          description: Text(selectedDate != null
+                              ? '${product.name} expiry set to ${dateFmt.format(selectedDate!)}'
+                              : '${product.name} expiry removed'),
+                          autoCloseDuration: const Duration(seconds: 3),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        toastification.show(
+                          context: context,
+                          type: ToastificationType.error,
+                          title: const Text('Error Updating Expiry Date'),
+                          description: Text(e.toString()),
+                        );
+                      }
+                    }
+                  },
+                  child: const Text('Save Changes'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   // ── Add Stock Dialog ───────────────────────────────────────────────────────
   void _showAddStockDialog(BuildContext context, ProductModel product) {
     showDialog(
@@ -230,12 +376,14 @@ class _ProductInfoCard extends StatelessWidget {
   final String expiryStatus;
   final DateTime? earliestExpiry;
   final double? currentBatchCost;
+  final VoidCallback? onUpdateExpiry;
   const _ProductInfoCard({
     required this.product,
     required this.categoryName,
     required this.expiryStatus,
     required this.earliestExpiry,
     this.currentBatchCost,
+    this.onUpdateExpiry,
   });
 
   @override
@@ -298,7 +446,26 @@ class _ProductInfoCard extends StatelessWidget {
                   _InfoChip(label: 'Category', value: categoryName, icon: Icons.category_outlined),
                   _InfoChip(label: 'Unit', value: product.unit, icon: Icons.straighten),
                   _InfoChip(label: 'Sale Price', value: 'Rs. ${product.price.toStringAsFixed(2)}', icon: Icons.sell_outlined),
-                  _InfoChip(label: 'Cost Price', value: 'Rs. ${(currentBatchCost != null && currentBatchCost! > 0 ? currentBatchCost! : product.cost).toStringAsFixed(2)}', icon: Icons.shopping_cart_outlined),
+                  _InfoChip(label: 'Cost Price', value: 'Rs. ${product.cost.toStringAsFixed(2)}', icon: Icons.shopping_cart_outlined),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: onUpdateExpiry,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _InfoChip(
+                            label: 'Expiry Date',
+                            value: earliestExpiry != null ? DateFormat('dd MMM yyyy').format(earliestExpiry!) : 'Not Set',
+                            icon: Icons.event_outlined,
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(Icons.edit_calendar_outlined, size: 14, color: AppColors.primary.withValues(alpha: 0.7)),
+                        ],
+                      ),
+                    ),
+                  ),
                 ]),
               ],
             ),
@@ -354,6 +521,7 @@ class _SummaryStatRow extends ConsumerWidget {
   final int stock, activeBatches;
   final String unit, expiryStatus;
   final DateTime? earliestExpiry;
+  final double cost;
   const _SummaryStatRow({
     required this.productId,
     required this.stock,
@@ -361,26 +529,21 @@ class _SummaryStatRow extends ConsumerWidget {
     required this.activeBatches,
     required this.earliestExpiry,
     required this.expiryStatus,
+    required this.cost,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final dateFmt = DateFormat('dd MMM yyyy');
     final currFmt = NumberFormat.currency(locale: 'en_IN', symbol: 'Rs. ', decimalDigits: 2);
-    final fifoAsync = ref.watch(productFifoStatsProvider(productId));
     Color expiryColor = AppColors.statusGreen;
     Color expiryBg = AppColors.statusGreenBg;
     if (expiryStatus == 'Expired') { expiryColor = AppColors.statusRed; expiryBg = AppColors.statusRedBg; }
     if (expiryStatus == 'Expiring Soon') { expiryColor = AppColors.statusAmber; expiryBg = AppColors.statusAmberBg; }
     if (expiryStatus == 'N/A') { expiryColor = AppColors.statusGray; expiryBg = AppColors.statusGrayBg; }
 
-    final invValue = fifoAsync.maybeWhen(
-      data: (s) => currFmt.format(s.inventoryValue), orElse: () => '…');
-    final estProfit = fifoAsync.maybeWhen(
-      data: (s) => currFmt.format(s.estimatedProfit), orElse: () => '…');
-    final profitColor = fifoAsync.maybeWhen(
-      data: (s) => s.estimatedProfit >= 0 ? AppColors.statusGreen : AppColors.statusRed,
-      orElse: () => AppColors.statusGray);
+    final double invValueNum = cost * stock;
+    final invValue = currFmt.format(invValueNum);
 
     return Wrap(
       spacing: 12,
@@ -391,14 +554,14 @@ class _SummaryStatRow extends ConsumerWidget {
           label: 'Total Stock',
           value: '$stock $unit',
           color: AppColors.primary,
-          bg: AppColors.primary.withOpacity(0.08),
+          bg: AppColors.primary.withValues(alpha: 0.08),
         ),
         _StatCard(
           icon: FontAwesomeIcons.layerGroup,
           label: 'Active Batches',
           value: '$activeBatches',
           color: AppColors.accentTeal,
-          bg: AppColors.accentTeal.withOpacity(0.08),
+          bg: AppColors.accentTeal.withValues(alpha: 0.08),
         ),
         _StatCard(
           icon: FontAwesomeIcons.calendarXmark,
@@ -419,14 +582,7 @@ class _SummaryStatRow extends ConsumerWidget {
           label: 'Inventory Value',
           value: invValue,
           color: AppColors.accentTeal,
-          bg: AppColors.accentTeal.withOpacity(0.08),
-        ),
-        _StatCard(
-          icon: FontAwesomeIcons.chartLine,
-          label: 'Est. Profit',
-          value: estProfit,
-          color: profitColor,
-          bg: profitColor.withOpacity(0.08),
+          bg: AppColors.accentTeal.withValues(alpha: 0.08),
         ),
       ],
     );
@@ -606,7 +762,7 @@ class _SaleHistoryTab extends ConsumerWidget {
           return _EmptyState(
             icon: FontAwesomeIcons.cashRegister,
             message: 'No sales recorded yet',
-            sub: 'Sales will appear here when orders are marked Completed',
+            sub: 'Sales will appear here when orders are placed or completed',
           );
         }
         return ListView.builder(
@@ -1089,6 +1245,7 @@ class _AddStockDialogState extends ConsumerState<_AddStockDialog> {
 
               // Supplier dropdown
               DropdownButtonFormField<String>(
+                isExpanded: true,
                 value: _selectedSupplierId,
                 decoration: const InputDecoration(
                   labelText: 'Supplier *',
@@ -1097,7 +1254,10 @@ class _AddStockDialogState extends ConsumerState<_AddStockDialog> {
                 ),
                 items: suppliers.map((s) => DropdownMenuItem(
                   value: s.id,
-                  child: Text(s.companyName.isNotEmpty ? s.companyName : s.name),
+                  child: Text(
+                    s.companyName.isNotEmpty ? s.companyName : s.name,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 )).toList(),
                 onChanged: (val) {
                   final sup = suppliers.firstWhere((s) => s.id == val);
@@ -1276,7 +1436,7 @@ class _AddStockDialogState extends ConsumerState<_AddStockDialog> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Adjust Stock Dialog — with FIFO batch consumption preview
+// Adjust Stock Dialog — supports direct Balance Stock and FIFO batch consumption
 // ─────────────────────────────────────────────────────────────────────────────
 class _AdjustStockDialog extends ConsumerStatefulWidget {
   final ProductModel product;
@@ -1290,21 +1450,43 @@ class _AdjustStockDialogState extends ConsumerState<_AdjustStockDialog> {
   final _formKey = GlobalKey<FormState>();
   final _qtyCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
-  String _type = 'add';
+  String _type = 'add'; // 'add' or 'remove'
+  String _targetMode = 'balance'; // 'balance' or 'fifo'
   String? _reason;
   bool _loading = false;
 
-  // FIFO batch consumption preview (for FIFO-consuming removal reasons)
+  // FIFO batch state
   List<FifoBatchConsumption>? _batchPreview;
   bool _previewLoading = false;
   String? _previewError;
+  int _availableBatchStock = 0;
 
-  static const _fifoReasons = {'Damage', 'Expired', 'Spoiled', 'Waste'};
-  static const _addReasons = ['Restock', 'Return', 'Correction', 'Other'];
-  static const _removeReasons = ['Damage', 'Expired', 'Spoiled', 'Waste', 'Correction', 'Other'];
+  static const _addReasons = ['Restock', 'Return', 'Correction', 'Physical Count Adjustment', 'Other'];
+  static const _removeReasons = ['Expired', 'Damage', 'Spoiled', 'Waste', 'Correction', 'Shrinkage / Loss', 'Other'];
 
-  bool get _isFifoRemoval =>
-      _type == 'remove' && _reason != null && _fifoReasons.contains(_reason);
+  @override
+  void initState() {
+    super.initState();
+    _checkBatchStock();
+  }
+
+  Future<void> _checkBatchStock() async {
+    try {
+      final batches = await ref.read(inventoryRepositoryProvider).getBatchesForProduct(widget.product.id).first;
+      final activeBatches = batches.where((b) => b.status == 'active' && b.remainingQty > 0);
+      final total = activeBatches.fold<int>(0, (sum, b) => sum + b.remainingQty);
+      if (mounted) {
+        setState(() {
+          _availableBatchStock = total;
+          if (total > 0) {
+            _targetMode = 'fifo';
+          } else {
+            _targetMode = 'balance';
+          }
+        });
+      }
+    } catch (_) {}
+  }
 
   @override
   void dispose() {
@@ -1314,8 +1496,8 @@ class _AdjustStockDialogState extends ConsumerState<_AdjustStockDialog> {
   }
 
   Future<void> _loadFifoPreview() async {
-    final qty = int.tryParse(_qtyCtrl.text);
-    if (qty == null || qty < 1 || !_isFifoRemoval) {
+    final qty = int.tryParse(_qtyCtrl.text.trim());
+    if (qty == null || qty < 1 || _targetMode != 'fifo') {
       setState(() { _batchPreview = null; _previewError = null; });
       return;
     }
@@ -1326,7 +1508,13 @@ class _AdjustStockDialogState extends ConsumerState<_AdjustStockDialog> {
           .previewFifoConsumption(widget.product.id, qty);
       if (mounted) setState(() { _batchPreview = consumptions; _previewLoading = false; });
     } on InsufficientStockException catch (e) {
-      if (mounted) setState(() { _previewError = 'Only ${e.available} units available'; _previewLoading = false; _batchPreview = null; });
+      if (mounted) {
+        setState(() {
+          _previewError = 'Only ${e.available} units available in active FIFO batches.\nSwitch to "Balance Stock" to adjust directly from catalog inventory.';
+          _previewLoading = false;
+          _batchPreview = null;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() { _previewError = 'Preview failed: $e'; _previewLoading = false; _batchPreview = null; });
     }
@@ -1336,15 +1524,36 @@ class _AdjustStockDialogState extends ConsumerState<_AdjustStockDialog> {
     if (!_formKey.currentState!.validate()) return;
     if (_reason == null) {
       toastification.show(
-        context: context, type: ToastificationType.error,
+        context: context,
+        type: ToastificationType.error,
         title: const Text('Please select a reason'),
         autoCloseDuration: const Duration(seconds: 3),
       );
       return;
     }
-    if (_isFifoRemoval && _batchPreview == null) {
-      await _loadFifoPreview();
-      if (_batchPreview == null) return; // still null = error shown above
+
+    final int qty = int.parse(_qtyCtrl.text.trim());
+
+    if (_type == 'remove') {
+      if (qty > widget.product.stock) {
+        toastification.show(
+          context: context,
+          type: ToastificationType.error,
+          title: const Text('Invalid Quantity'),
+          description: Text('Cannot remove $qty units. Total current stock is only ${widget.product.stock} ${widget.product.unit}.'),
+          autoCloseDuration: const Duration(seconds: 4),
+        );
+        return;
+      }
+
+      if (_targetMode == 'fifo' && _availableBatchStock > 0) {
+        if (_batchPreview == null) {
+          await _loadFifoPreview();
+        }
+        if (_batchPreview == null && _availableBatchStock < qty) {
+          _targetMode = 'balance';
+        }
+      }
     }
 
     setState(() => _loading = true);
@@ -1357,16 +1566,18 @@ class _AdjustStockDialogState extends ConsumerState<_AdjustStockDialog> {
         productId: widget.product.id,
         productName: widget.product.name,
         type: _type,
-        quantity: int.parse(_qtyCtrl.text),
+        quantity: qty,
         reason: _reason!,
         notes: _notesCtrl.text.trim(),
         adjustedBy: adjustedBy,
         createdAt: DateTime.now(),
       );
 
+      final isUsingFifo = _type == 'remove' && _targetMode == 'fifo' && _batchPreview != null && _batchPreview!.isNotEmpty;
+
       await ref.read(inventoryRepositoryProvider).addAdjustment(
         adjustment,
-        batchConsumptions: _isFifoRemoval ? (_batchPreview ?? []) : [],
+        batchConsumptions: isUsingFifo ? _batchPreview! : [],
       );
 
       if (!mounted) return;
@@ -1377,12 +1588,18 @@ class _AdjustStockDialogState extends ConsumerState<_AdjustStockDialog> {
         context: ctx,
         type: ToastificationType.success,
         title: const Text('Stock adjusted successfully'),
+        description: Text(
+          _type == 'add'
+              ? 'Added $qty ${widget.product.unit} to stock.'
+              : 'Deducted $qty ${widget.product.unit} from ${isUsingFifo ? "FIFO batches" : "balance stock"}.',
+        ),
         autoCloseDuration: const Duration(seconds: 3),
       );
     } catch (e) {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
       toastification.show(
-        context: context, type: ToastificationType.error,
+        context: context,
+        type: ToastificationType.error,
         title: Text('Error: $e'),
         autoCloseDuration: const Duration(seconds: 4),
       );
@@ -1393,12 +1610,16 @@ class _AdjustStockDialogState extends ConsumerState<_AdjustStockDialog> {
   Widget build(BuildContext context) {
     final reasons = _type == 'add' ? _addReasons : _removeReasons;
     final currFmt = NumberFormat.currency(locale: 'en_IN', symbol: 'Rs. ', decimalDigits: 2);
+    final int enteredQty = int.tryParse(_qtyCtrl.text.trim()) ?? 0;
+    final int projectedStock = _type == 'add'
+        ? widget.product.stock + enteredQty
+        : (widget.product.stock - enteredQty).clamp(0, 999999);
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: SingleChildScrollView(
         child: Container(
-          width: 520,
+          width: 560,
           padding: const EdgeInsets.all(28),
           child: Form(
             key: _formKey,
@@ -1411,27 +1632,47 @@ class _AdjustStockDialogState extends ConsumerState<_AdjustStockDialog> {
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
                   IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
                 ]),
-                const SizedBox(height: 8),
-                // Current stock info
+                const SizedBox(height: 12),
+
+                // Current stock & batch summary banner
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(8),
+                    color: AppColors.primary.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(widget.product.name,
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      Text('Current: ${widget.product.stock} ${widget.product.unit}',
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(widget.product.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                          const SizedBox(height: 2),
+                          Text('SKU: ${widget.product.sku} | Unit: ${widget.product.unit}',
+                              style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                        ],
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text('Balance: ${widget.product.stock} ${widget.product.unit}',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.primary)),
+                          const SizedBox(height: 2),
+                          Text('Batches: $_availableBatchStock units',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _availableBatchStock > 0 ? AppColors.statusGreen : AppColors.textMuted,
+                              )),
+                        ],
+                      ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 20),
 
-                // Type toggle
+                // Type toggle (Add vs Remove)
                 Row(children: [
                   Expanded(
                     child: GestureDetector(
@@ -1481,6 +1722,113 @@ class _AdjustStockDialogState extends ConsumerState<_AdjustStockDialog> {
                 ]),
                 const SizedBox(height: 16),
 
+                // ── Stock Source Selection (Balance Stock vs FIFO Batch) ───
+                if (_type == 'remove') ...[
+                  const Text('Adjust From:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              _targetMode = 'balance';
+                              _batchPreview = null;
+                              _previewError = null;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: _targetMode == 'balance'
+                                  ? AppColors.primary.withValues(alpha: 0.1)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _targetMode == 'balance' ? AppColors.primary : AppColors.border,
+                                width: _targetMode == 'balance' ? 1.5 : 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _targetMode == 'balance' ? Icons.radio_button_checked : Icons.radio_button_off,
+                                  size: 16,
+                                  color: _targetMode == 'balance' ? AppColors.primary : AppColors.textMuted,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('Balance Stock', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                      Text('${widget.product.stock} ${widget.product.unit} available',
+                                          style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: InkWell(
+                          onTap: _availableBatchStock > 0
+                              ? () {
+                                  setState(() {
+                                    _targetMode = 'fifo';
+                                  });
+                                  _loadFifoPreview();
+                                }
+                              : null,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Opacity(
+                            opacity: _availableBatchStock > 0 ? 1.0 : 0.5,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: _targetMode == 'fifo'
+                                    ? AppColors.primary.withValues(alpha: 0.1)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: _targetMode == 'fifo' ? AppColors.primary : AppColors.border,
+                                  width: _targetMode == 'fifo' ? 1.5 : 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _targetMode == 'fifo' ? Icons.radio_button_checked : Icons.radio_button_off,
+                                    size: 16,
+                                    color: _targetMode == 'fifo' ? AppColors.primary : AppColors.textMuted,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text('FIFO Batches', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                        Text('$_availableBatchStock units in batches',
+                                            style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // Quantity & Reason
                 Row(children: [
                   Expanded(
                     child: TextFormField(
@@ -1492,13 +1840,19 @@ class _AdjustStockDialogState extends ConsumerState<_AdjustStockDialog> {
                       ),
                       keyboardType: TextInputType.number,
                       onChanged: (_) {
-                        // Re-compute FIFO preview when quantity changes
-                        if (_isFifoRemoval) _loadFifoPreview();
+                        setState(() {});
+                        if (_type == 'remove' && _targetMode == 'fifo') {
+                          _loadFifoPreview();
+                        }
                       },
                       validator: (v) {
-                        if (v == null || v.isEmpty) return 'Required';
-                        if (int.tryParse(v) == null) return 'Must be a number';
-                        if (int.parse(v) < 1) return 'Min 1';
+                        if (v == null || v.trim().isEmpty) return 'Required';
+                        final num = int.tryParse(v.trim());
+                        if (num == null) return 'Must be a number';
+                        if (num < 1) return 'Min 1';
+                        if (_type == 'remove' && num > widget.product.stock) {
+                          return 'Exceeds stock (${widget.product.stock})';
+                        }
                         return null;
                       },
                     ),
@@ -1506,19 +1860,21 @@ class _AdjustStockDialogState extends ConsumerState<_AdjustStockDialog> {
                   const SizedBox(width: 16),
                   Expanded(
                     child: DropdownButtonFormField<String>(
+                      isExpanded: true,
                       value: _reason,
                       decoration: const InputDecoration(
                         labelText: 'Reason *',
                         border: OutlineInputBorder(),
+                        isDense: true,
                       ),
                       items: reasons
-                          .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                          .map((r) => DropdownMenuItem(
+                                value: r,
+                                child: Text(r, overflow: TextOverflow.ellipsis),
+                              ))
                           .toList(),
                       onChanged: (v) {
-                        setState(() { _reason = v; _batchPreview = null; });
-                        if (_isFifoRemoval || (v != null && _fifoReasons.contains(v))) {
-                          Future.microtask(_loadFifoPreview);
-                        }
+                        setState(() { _reason = v; });
                       },
                       validator: (v) => v == null ? 'Required' : null,
                     ),
@@ -1536,86 +1892,104 @@ class _AdjustStockDialogState extends ConsumerState<_AdjustStockDialog> {
                   maxLines: 2,
                 ),
 
-                // ── FIFO batch preview panel ────────────────────────────
-                if (_isFifoRemoval) ...
-                  [
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.statusAmberBg,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppColors.statusAmber.withOpacity(0.4)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(children: [
-                            const Icon(Icons.info_outline, size: 16, color: AppColors.statusAmber),
-                            const SizedBox(width: 6),
-                            Text('FIFO Batch Consumption Preview',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    color: AppColors.statusAmber)),
-                          ]),
-                          const SizedBox(height: 8),
-                          if (_previewLoading)
-                            const Center(
-                              child: SizedBox(
-                                width: 20, height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                            )
-                          else if (_previewError != null)
-                            Text(_previewError!,
-                                style: const TextStyle(
-                                    color: AppColors.statusRed, fontSize: 12))
-                          else if (_batchPreview != null && _batchPreview!.isNotEmpty) ...
-                            [
-                              ..._batchPreview!.map((bc) => Padding(
-                                    padding: const EdgeInsets.only(bottom: 4),
-                                    child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(bc.batchNumber,
-                                              style: const TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w600)),
-                                          Text(
-                                              '${bc.quantityConsumed} units × ${currFmt.format(bc.unitCostPrice)} = ${currFmt.format(bc.totalCost)}',
-                                              style: const TextStyle(
-                                                  fontSize: 12)),
-                                        ]),
-                                  )),
-                              const Divider(height: 12),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Total Cost',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12)),
-                                  Text(
-                                    currFmt.format(_batchPreview!.fold<double>(
-                                        0, (s, bc) => s + bc.totalCost)),
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            ]
-                          else
-                            Text('Enter quantity to see batch breakdown.',
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textMuted)),
-                        ],
-                      ),
+                // ── Preview Box (Balance Stock vs FIFO) ──────────────────────
+                const SizedBox(height: 16),
+                if (_type == 'remove' && _targetMode == 'fifo' && _availableBatchStock > 0)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.statusAmberBg,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.statusAmber.withValues(alpha: 0.4)),
                     ),
-                  ],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(children: [
+                          Icon(Icons.info_outline, size: 16, color: AppColors.statusAmber),
+                          SizedBox(width: 6),
+                          Text('FIFO Batch Consumption Breakdown',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: AppColors.statusAmber)),
+                        ]),
+                        const SizedBox(height: 8),
+                        if (_previewLoading)
+                          const Center(
+                            child: SizedBox(
+                              width: 20, height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        else if (_previewError != null)
+                          Text(_previewError!,
+                              style: const TextStyle(color: AppColors.statusRed, fontSize: 12))
+                        else if (_batchPreview != null && _batchPreview!.isNotEmpty) ...[
+                          ..._batchPreview!.map((bc) => Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(bc.batchNumber,
+                                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                      Text(
+                                          '${bc.quantityConsumed} units × ${currFmt.format(bc.unitCostPrice)} = ${currFmt.format(bc.totalCost)}',
+                                          style: const TextStyle(fontSize: 12)),
+                                    ]),
+                              )),
+                          const Divider(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Total Cost', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                              Text(
+                                currFmt.format(_batchPreview!.fold<double>(0, (s, bc) => s + bc.totalCost)),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ] else
+                          const Text('Enter quantity to see batch breakdown.',
+                              style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                      ],
+                    ),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _type == 'add' ? Icons.trending_up : Icons.inventory_2_outlined,
+                          size: 20,
+                          color: AppColors.primary,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _type == 'add' ? 'Balance Stock Addition' : 'Direct Balance Stock Adjustment',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.primary),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Current: ${widget.product.stock} ${widget.product.unit}  ➔  New Balance: $projectedStock ${widget.product.unit}',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
                 const SizedBox(height: 24),
 

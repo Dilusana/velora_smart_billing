@@ -106,9 +106,12 @@ class ProductWithExpiry {
 
 String _calcExpiryStatus(DateTime? date) {
   if (date == null) return 'N/A';
-  final diff = date.difference(DateTime.now()).inDays;
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final target = DateTime(date.year, date.month, date.day);
+  final diff = target.difference(today).inDays;
   if (diff < 0) return 'Expired';
-  if (diff <= 5) return 'Expiring Soon';
+  if (diff <= 30) return 'Expiring Soon';
   return 'Normal';
 }
 
@@ -136,7 +139,7 @@ final inventoryWithExpiryProvider =
         }
 
         return AsyncValue.data(products.map((p) {
-          final expiry = earliestExpiry[p.id];
+          final expiry = p.expiryDate ?? earliestExpiry[p.id];
           return ProductWithExpiry(
             product: p,
             earliestExpiry: expiry,

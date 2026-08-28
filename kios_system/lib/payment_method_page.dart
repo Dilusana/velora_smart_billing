@@ -14,6 +14,8 @@ class PaymentMethodPage extends StatefulWidget {
   final String? customerId;
   final String? customerName;
   final String? customerPhone;
+  final String? customerEmail;
+  final String? customerAddress;
   final String? userName;
 
   const PaymentMethodPage({
@@ -26,6 +28,8 @@ class PaymentMethodPage extends StatefulWidget {
     this.customerId,
     this.customerName,
     this.customerPhone,
+    this.customerEmail,
+    this.customerAddress,
     this.userName,
   });
 
@@ -564,6 +568,8 @@ class _PaymentMethodPageState extends State<PaymentMethodPage>
         customerId: widget.customerId,
         customerName: widget.customerName,
         customerPhone: widget.customerPhone,
+        customerEmail: widget.customerEmail,
+        customerAddress: widget.customerAddress,
         userName: widget.userName,
       ),
     );
@@ -580,6 +586,8 @@ class _PaymentProcessingDialog extends StatefulWidget {
   final String? customerId;
   final String? customerName;
   final String? customerPhone;
+  final String? customerEmail;
+  final String? customerAddress;
   final String? userName;
 
   const _PaymentProcessingDialog({
@@ -592,6 +600,8 @@ class _PaymentProcessingDialog extends StatefulWidget {
     this.customerId,
     this.customerName,
     this.customerPhone,
+    this.customerEmail,
+    this.customerAddress,
     this.userName,
   });
 
@@ -638,6 +648,8 @@ class _PaymentProcessingDialogState extends State<_PaymentProcessingDialog>
         customerId: widget.customerId,
         customerName: widget.customerName,
         customerPhone: widget.customerPhone,
+        customerEmail: widget.customerEmail,
+        customerAddress: widget.customerAddress,
         userName: widget.userName,
       );
 

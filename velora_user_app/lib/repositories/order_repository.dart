@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/cart_item.dart';
 import '../models/order_model.dart';
 import '../services/cart_service.dart';
+import '../services/user_activity_service.dart';
 
 class OrderRepository {
   static final OrderRepository instance = OrderRepository._();
@@ -52,6 +53,7 @@ class OrderRepository {
         'price': price,
         'quantity': item.quantity,
         'total': lineTotal,
+        'imageUrl': item.imageUrl,
       };
     }).toList();
 
@@ -136,6 +138,9 @@ class OrderRepository {
 
     // Commit batch transaction
     await batch.commit();
+
+    // Log purchase activity for recommendations
+    UserActivityService.instance.logPurchase(items: orderItems);
 
     // 5. Clear cart
     await CartService.instance.clearCart();

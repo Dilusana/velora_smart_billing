@@ -32,7 +32,22 @@ class ProductDetailPage extends ConsumerWidget {
     if (product == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Product Not Found')),
-        body: const Center(child: Text('Product not found.')),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.inventory_2_outlined, size: 64, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text('Product not found or has been deleted.', style: TextStyle(fontSize: 16)),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Back to Products'),
+                onPressed: () => context.go('/products'),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
@@ -43,9 +58,11 @@ class ProductDetailPage extends ConsumerWidget {
       orElse: () => null,
     );
 
+    final bool isNetworkImage = product.imageUrl.startsWith('http://') || product.imageUrl.startsWith('https://');
+
     return Scaffold(
       backgroundColor: isDark ? AppColors.bgDark : AppColors.bgPrimary,
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -118,17 +135,35 @@ class ProductDetailPage extends ConsumerWidget {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
                         color: Colors.grey[200],
-                        image: product.imageUrl.isNotEmpty
-                            ? DecorationImage(
-                                image: NetworkImage(product.imageUrl),
-                                fit: BoxFit.cover,
-                              )
-                            : null,
                       ),
-                      child: product.imageUrl.isEmpty
-                          ? const Icon(Icons.image,
-                              size: 56, color: Colors.grey)
-                          : null,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: product.imageUrl.isNotEmpty
+                            ? (isNetworkImage
+                                ? Image.network(
+                                    product.imageUrl,
+                                    fit: BoxFit.cover,
+                                    width: 160,
+                                    height: 160,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.broken_image_outlined,
+                                      size: 56,
+                                      color: Colors.grey,
+                                    ),
+                                  )
+                                : Image.asset(
+                                    product.imageUrl,
+                                    fit: BoxFit.cover,
+                                    width: 160,
+                                    height: 160,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.image,
+                                      size: 56,
+                                      color: Colors.grey,
+                                    ),
+                                  ))
+                            : const Icon(Icons.image, size: 56, color: Colors.grey),
+                      ),
                     ),
                     const SizedBox(width: 32),
                     Expanded(
@@ -168,14 +203,12 @@ class ProductDetailPage extends ConsumerWidget {
                               style: const TextStyle(
                                   color: AppColors.textMuted, fontSize: 16)),
                           const SizedBox(height: 24),
-                          Row(
+                          Wrap(
+                            spacing: 48,
+                            runSpacing: 16,
                             children: [
-                              _buildStat('Price',
-                                  _fmt(product.price)),
-                              const SizedBox(width: 48),
-                              _buildStat('Cost',
-                                  _fmt(product.cost)),
-                              const SizedBox(width: 48),
+                              _buildStat('Price', _fmt(product.price)),
+                              _buildStat('Cost', _fmt(product.cost)),
                               _buildStat(
                                 'Stock',
                                 '${product.stock} ${product.unit}',
@@ -195,12 +228,10 @@ class ProductDetailPage extends ConsumerWidget {
             const SizedBox(height: 24),
 
             // ── Overview ─────────────────────────────────────────────────────
-            Expanded(
-              child: _OverviewTab(
-                product: product,
-                categoryName: category?.name ?? (product.category.isNotEmpty ? product.category : 'Uncategorized'),
-                isDark: isDark,
-              ),
+            _OverviewTab(
+              product: product,
+              categoryName: category?.name ?? (product.category.isNotEmpty ? product.category : 'Uncategorized'),
+              isDark: isDark,
             ),
           ],
         ),
@@ -272,6 +303,14 @@ class _OverviewTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    String marginStr = '0.0%';
+    if (product.price > 0) {
+      final margin = (product.price - product.cost) / product.price * 100;
+      if (!margin.isNaN && !margin.isInfinite) {
+        marginStr = '${margin.toStringAsFixed(1)}%';
+      }
+    }
+
     return Card(
       elevation: 0,
       color: isDark ? AppColors.bgDarkCard : AppColors.bgCard,
@@ -280,7 +319,7 @@ class _OverviewTab extends StatelessWidget {
         side: BorderSide(
             color: isDark ? AppColors.bgDarkBorder : AppColors.border),
       ),
-      child: SingleChildScrollView(
+      child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -332,8 +371,7 @@ class _OverviewTab extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            _detailRow('Profit Margin',
-                '${((product.price - product.cost) / product.price * 100).toStringAsFixed(1)}%'),
+            _detailRow('Profit Margin', marginStr),
           ],
         ),
       ),
@@ -358,4 +396,3 @@ class _OverviewTab extends StatelessWidget {
     );
   }
 }
-

@@ -20,6 +20,7 @@ import '../../features/suppliers/suppliers_page.dart';
 import '../../features/suppliers/supplier_detail_page.dart';
 import '../../features/reports/reports_page.dart';
 import '../../features/promotions/promotions_page.dart';
+import '../../features/notifications/notifications_page.dart';
 import '../../features/employees/employees_page.dart';
 import '../../features/employees/employee_profile_page.dart';
 import '../../features/help_center/help_center_page.dart';
@@ -60,7 +61,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/products',
-            builder: (context, state) => const ProductsPage(),
+            builder: (context, state) {
+              final category = state.uri.queryParameters['category'];
+              return ProductsPage(initialCategory: category);
+            },
             routes: [
               GoRoute(
                 path: ':id',
@@ -142,6 +146,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/promotions',
             builder: (context, state) => const PromotionsPage(),
+          ),
+          GoRoute(
+            path: '/notifications',
+            builder: (context, state) => const NotificationsPage(),
           ),
           GoRoute(
             path: '/employees',

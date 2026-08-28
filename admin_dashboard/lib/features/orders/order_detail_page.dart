@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -353,7 +354,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: statuses.contains(selectedNorm) ? selectedNorm : 'Pending',
+              initialValue: statuses.contains(selectedNorm) ? selectedNorm : 'Pending',
               decoration:
                   const InputDecoration(border: OutlineInputBorder()),
               items: statuses
@@ -450,12 +451,28 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
           setState(() => _updatingStatus = false);
           return;
         }
+
+        // 3. Send instant notification to user/customer
+        try {
+          final notifRef = FirebaseFirestore.instance.collection('notifications').doc();
+          final orderShortId = order.id.toUpperCase().substring(0, order.id.length > 8 ? 8 : order.id.length);
+          await notifRef.set({
+            'id': notifRef.id,
+            'title': 'Order Completed! 🎉',
+            'message': 'Your order #$orderShortId has been completed! Thank you for shopping with Velora.',
+            'targetType': 'specific',
+            'targetUserId': order.customerId,
+            'targetUserName': order.customerName,
+            'status': 'Sent',
+            'createdAt': Timestamp.now(),
+          });
+        } catch (_) {}
       }
 
       if (!mounted) return;
       _showSuccessSnackbar(
         _selectedStatus == 'Completed'
-            ? 'Order completed — Stock deducted & COGS recorded'
+            ? 'Order completed — Stock deducted & Notification sent to customer'
             : 'Order status updated to $_selectedStatus',
       );
     } catch (e) {

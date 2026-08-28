@@ -156,12 +156,13 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                 const SizedBox(width: 16),
                 Expanded(
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     value: _sourceFilter,
                     decoration: InputDecoration(
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     items: ['All', 'Kiosk', 'App', 'Web']
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis)))
                         .toList(),
                     onChanged: (val) => setState(() => _sourceFilter = val!),
                   ),
@@ -169,12 +170,13 @@ class _SalesPageState extends ConsumerState<SalesPage> {
                 const SizedBox(width: 16),
                 Expanded(
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     value: _statusFilter,
                     decoration: InputDecoration(
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     items: ['All', 'Completed', 'Pending', 'Processing', 'Cancelled']
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis)))
                         .toList(),
                     onChanged: (val) => setState(() => _statusFilter = val!),
                   ),

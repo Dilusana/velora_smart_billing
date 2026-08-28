@@ -6,6 +6,8 @@ class OrderItemModel {
   final double price;
   final int quantity;
   final double total;
+  final bool isPicked;
+  final String imageUrl;
 
   const OrderItemModel({
     required this.productId,
@@ -13,6 +15,8 @@ class OrderItemModel {
     required this.price,
     required this.quantity,
     required this.total,
+    this.isPicked = false,
+    this.imageUrl = '',
   });
 
   factory OrderItemModel.fromMap(Map<String, dynamic> map) {
@@ -22,6 +26,8 @@ class OrderItemModel {
       price: map['price'] is num ? (map['price'] as num).toDouble() : 0.0,
       quantity: map['quantity'] is num ? (map['quantity'] as num).toInt() : 1,
       total: map['total'] is num ? (map['total'] as num).toDouble() : 0.0,
+      isPicked: map['isPicked'] == true,
+      imageUrl: (map['imageUrl'] ?? map['image'] ?? map['imagePath'] ?? '').toString(),
     );
   }
 
@@ -32,6 +38,8 @@ class OrderItemModel {
       'price': price,
       'quantity': quantity,
       'total': total,
+      'isPicked': isPicked,
+      'imageUrl': imageUrl,
     };
   }
 }
@@ -51,6 +59,10 @@ class UserOrderModel {
   final String orderSource;
   final String deliveryAddress;
   final String deliveryType;
+  final String driverName;
+  final String driverPhone;
+  final String employeeName;
+  final String branch;
   final DateTime? createdAt;
 
   const UserOrderModel({
@@ -68,8 +80,17 @@ class UserOrderModel {
     required this.orderSource,
     this.deliveryAddress = '',
     this.deliveryType = 'delivery',
+    this.driverName = '',
+    this.driverPhone = '',
+    this.employeeName = '',
+    this.branch = 'Main Branch',
     this.createdAt,
   });
+
+  int get totalItemsCount => items.fold(0, (acc, item) => acc + item.quantity);
+  int get pickedItemsCount => items.fold(0, (acc, item) => acc + (item.isPicked ? item.quantity : 0));
+  bool get isAllPicked => totalItemsCount > 0 && pickedItemsCount == totalItemsCount;
+  double get pickingProgress => totalItemsCount > 0 ? (pickedItemsCount / totalItemsCount) : 0.0;
 
   factory UserOrderModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
@@ -88,9 +109,16 @@ class UserOrderModel {
     DateTime? created;
     if (data['createdAt'] is Timestamp) {
       created = (data['createdAt'] as Timestamp).toDate();
+    } else if (data['createdAt'] is String) {
+      created = DateTime.tryParse(data['createdAt']);
     }
 
-    final String delType = (data['deliveryType'] ?? data['deliverytype'] ?? (data['deliveryFee'] != null && parseDouble(data['deliveryFee']) > 0 ? 'delivery' : 'pickup')).toString();
+    final String delType = (data['deliveryType'] ?? data['deliverytype'] ?? (data['deliveryFee'] != null && parseDouble(data['deliveryFee']) > 0 ? 'delivery' : (data['deliveryAddress']?.toString().toLowerCase().contains('pickup') == true ? 'pickup' : 'delivery'))).toString();
+
+    final String dName = (data['driverName'] ?? data['driver'] ?? data['courierName'] ?? data['assignedDriver'] ?? '').toString();
+    final String dPhone = (data['driverPhone'] ?? data['courierPhone'] ?? data['driver_phone'] ?? '').toString();
+    final String empName = (data['employeeName'] ?? data['assignedEmployee'] ?? data['pickedBy'] ?? data['processedBy'] ?? data['employee'] ?? data['userName'] ?? '').toString();
+    final String branchName = (data['branch'] ?? data['branchName'] ?? 'Main Store').toString();
 
     return UserOrderModel(
       id: doc.id,
@@ -107,6 +135,10 @@ class UserOrderModel {
       orderSource: (data['ordersource'] ?? 'UserApp').toString(),
       deliveryAddress: (data['deliveryAddress'] ?? 'Home Address').toString(),
       deliveryType: delType,
+      driverName: dName,
+      driverPhone: dPhone,
+      employeeName: empName,
+      branch: branchName,
       createdAt: created,
     );
   }

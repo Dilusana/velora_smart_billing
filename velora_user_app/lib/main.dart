@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'services/cart_service.dart';
+import 'services/push_notification_service.dart';
 import 'dart:async';
 import 'screens/home_screen.dart';
 import 'screens/auth/register_screen.dart';
@@ -17,6 +18,8 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    // Initialize Push Notifications (FCM + Local Notifications)
+    await PushNotificationService.instance.init();
   } catch (e) {
     debugPrint('Firebase initialization note: $e');
   }

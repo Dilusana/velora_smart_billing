@@ -4,8 +4,13 @@ import 'package:data_table_2/data_table_2.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:toastification/toastification.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/data/models.dart';
+import '../products/product_providers.dart';
+import '../products/duplicate_products_dialog.dart';
+import '../products/csv_product_service.dart';
 import 'inventory_providers.dart';
 
 class InventoryPage extends ConsumerStatefulWidget {
@@ -29,8 +34,10 @@ class _InventoryPageState extends ConsumerState<InventoryPage>
     if (widget.initialFilter == 'in_stock') initialIndex = 1;
     if (widget.initialFilter == 'low_stock') initialIndex = 2;
     if (widget.initialFilter == 'out_of_stock') initialIndex = 3;
+    if (widget.initialFilter == 'expiring_soon') initialIndex = 4;
+    if (widget.initialFilter == 'expired') initialIndex = 5;
 
-    _tabController = TabController(length: 4, vsync: this, initialIndex: initialIndex);
+    _tabController = TabController(length: 6, vsync: this, initialIndex: initialIndex);
     _tabController.addListener(() => setState(() {}));
   }
 
@@ -39,6 +46,145 @@ class _InventoryPageState extends ConsumerState<InventoryPage>
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _showUpdateExpiryDialog(
+      BuildContext context, ProductModel product, DateTime? currentExpiry) async {
+    final dateFmt = DateFormat('dd MMM yyyy');
+    DateTime? selectedDate = currentExpiry;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  const Icon(Icons.event_outlined, color: AppColors.primary),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Adjust Expiry Date',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(product.name,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  Text('SKU: ${product.sku}',
+                      style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                  const SizedBox(height: 16),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate ?? DateTime.now().add(const Duration(days: 90)),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2040),
+                      );
+                      if (picked != null) {
+                        setDialogState(() {
+                          selectedDate = picked;
+                        });
+                      }
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Select Expiry Date',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.calendar_month_outlined),
+                      ),
+                      child: Text(
+                        selectedDate != null
+                            ? dateFmt.format(selectedDate!)
+                            : 'No expiry date set',
+                        style: TextStyle(
+                          color: selectedDate != null ? null : AppColors.textMuted,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (selectedDate != null) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.clear, size: 16, color: Colors.red),
+                        label: const Text('Clear Expiry Date',
+                            style: TextStyle(color: Colors.red, fontSize: 12)),
+                        onPressed: () {
+                          setDialogState(() {
+                            selectedDate = null;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    try {
+                      await FirebaseFirestore.instance
+                          .collection('products')
+                          .doc(product.id)
+                          .update({
+                        'expiryDate': selectedDate != null
+                            ? Timestamp.fromDate(selectedDate!)
+                            : FieldValue.delete(),
+                        'updatedAt': FieldValue.serverTimestamp(),
+                      });
+                      ref.invalidate(firestoreProductsProvider);
+                      if (context.mounted) {
+                        toastification.show(
+                          context: context,
+                          type: ToastificationType.success,
+                          title: const Text('Expiry Date Updated'),
+                          description: Text(selectedDate != null
+                              ? '${product.name} expiry set to ${dateFmt.format(selectedDate!)}'
+                              : '${product.name} expiry removed'),
+                          autoCloseDuration: const Duration(seconds: 3),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        toastification.show(
+                          context: context,
+                          type: ToastificationType.error,
+                          title: const Text('Error Updating Expiry Date'),
+                          description: Text(e.toString()),
+                        );
+                      }
+                    }
+                  },
+                  child: const Text('Save Changes'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -82,6 +228,10 @@ class _InventoryPageState extends ConsumerState<InventoryPage>
     final lowStockCount =
         items.where((i) => i.product.stock > 0 && i.product.stock <= 10).length;
     final outOfStockCount = items.where((i) => i.product.stock <= 0).length;
+    final expiringSoonCount =
+        items.where((i) => i.expiryStatus == 'Expiring Soon').length;
+    final expiredCount =
+        items.where((i) => i.expiryStatus == 'Expired').length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -110,16 +260,61 @@ class _InventoryPageState extends ConsumerState<InventoryPage>
                 ),
               ],
             ),
-            ElevatedButton.icon(
-              icon: const Icon(FontAwesomeIcons.fileImport, size: 16),
-              label: const Text('Bulk Import'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              ),
-              onPressed: () {},
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => DuplicateProductsDialog(
+                        allProducts: items.map((i) => i.product).toList(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.cleaning_services_outlined, size: 16),
+                  label: const Text('Clean Duplicates'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.statusAmber,
+                    side: const BorderSide(color: AppColors.statusAmber),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => CsvProductService.downloadSampleCsv(context),
+                  icon: const Icon(Icons.file_download_outlined, size: 16),
+                  label: const Text('Sample CSV'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: const BorderSide(color: AppColors.primary),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => CsvProductService.exportProductsToCsv(
+                    context,
+                    items.map((i) => i.product).toList(),
+                  ),
+                  icon: const Icon(Icons.download_rounded, size: 16),
+                  label: const Text('Export CSV'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: const BorderSide(color: AppColors.primary),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () => CsvProductService.importProductsFromCsv(context, ref),
+                  icon: const Icon(FontAwesomeIcons.fileImport, size: 16),
+                  label: const Text('Import CSV'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -150,6 +345,20 @@ class _InventoryPageState extends ConsumerState<InventoryPage>
                     if (outOfStockCount > 0) ...[
                       const SizedBox(width: 6),
                       const Icon(Icons.error, color: Colors.red, size: 16),
+                    ],
+                  ])),
+                  Tab(child: Row(children: [
+                    Text('Expiring Soon ($expiringSoonCount)'),
+                    if (expiringSoonCount > 0) ...[
+                      const SizedBox(width: 6),
+                      const Icon(Icons.access_time_filled, color: Colors.amber, size: 16),
+                    ],
+                  ])),
+                  Tab(child: Row(children: [
+                    Text('Expired ($expiredCount)'),
+                    if (expiredCount > 0) ...[
+                      const SizedBox(width: 6),
+                      const Icon(Icons.cancel, color: Colors.red, size: 16),
                     ],
                   ])),
                 ],
@@ -209,6 +418,8 @@ class _InventoryPageState extends ConsumerState<InventoryPage>
       if (_tabController.index == 1 && stock <= 10) return false;
       if (_tabController.index == 2 && (stock == 0 || stock > 10)) return false;
       if (_tabController.index == 3 && stock > 0) return false;
+      if (_tabController.index == 4 && i.expiryStatus != 'Expiring Soon') return false;
+      if (_tabController.index == 5 && i.expiryStatus != 'Expired') return false;
 
       // Search filter: name OR sku
       if (q.isNotEmpty) {
@@ -246,6 +457,8 @@ class _InventoryPageState extends ConsumerState<InventoryPage>
         NumberFormat.currency(locale: 'en_IN', symbol: 'Rs. ', decimalDigits: 2);
 
     return DataTable2(
+      dataRowHeight: 64,
+      headingRowHeight: 48,
       headingRowColor: WidgetStateProperty.all(
         isDark ? AppColors.bgDarkSurface : AppColors.bgPrimary,
       ),
@@ -255,12 +468,11 @@ class _InventoryPageState extends ConsumerState<InventoryPage>
         DataColumn2(label: Text('SKU'), size: ColumnSize.S),
         DataColumn2(label: Text('Stock'), size: ColumnSize.S),
         DataColumn2(label: Text('Expiry'), size: ColumnSize.M),
-        DataColumn2(label: Text('FIFO Cost'), size: ColumnSize.S, numeric: true),
+        DataColumn2(label: Text('Cost Price'), size: ColumnSize.S, numeric: true),
         DataColumn2(label: Text('Inv. Value'), size: ColumnSize.S, numeric: true),
         DataColumn2(label: Text('Sell Price'), size: ColumnSize.S, numeric: true),
-        DataColumn2(label: Text('Est. Profit'), size: ColumnSize.S, numeric: true),
         DataColumn2(label: Text('Status'), size: ColumnSize.S),
-        DataColumn2(label: Text(''), size: ColumnSize.S),
+        DataColumn2(label: Text('Actions'), size: ColumnSize.M),
       ],
       rows: filtered.map((item) {
         final p = item.product;
@@ -292,9 +504,12 @@ class _InventoryPageState extends ConsumerState<InventoryPage>
             expiryBadge = _badge('Normal', AppColors.statusGreen, AppColors.statusGreenBg);
         }
 
-        final expiryText = item.earliestExpiry != null
-            ? dateFmt.format(item.earliestExpiry!)
+        final expiryDateVal = p.expiryDate ?? item.earliestExpiry;
+        final expiryText = expiryDateVal != null
+            ? dateFmt.format(expiryDateVal)
             : '—';
+
+        final double invValue = p.cost * stock;
 
         return DataRow2(
           onTap: () => context.go('/inventory/${p.id}'),
@@ -353,72 +568,120 @@ class _InventoryPageState extends ConsumerState<InventoryPage>
                   child: Icon(Icons.warning, color: Colors.orange, size: 14),
                 ),
             ])),
-            // Expiry
-            DataCell(Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(expiryText,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: item.expiryStatus == 'Expired'
-                          ? AppColors.statusRed
-                          : item.expiryStatus == 'Expiring Soon'
-                              ? AppColors.statusAmber
-                              : null,
-                    )),
-                expiryBadge,
-              ],
-            )),
-            // FIFO Cost Price — loaded lazily per row
-            DataCell(_FifoStatCell(
-              productId: p.id,
-              builder: (FifoProductStats stats) => Text(
-                currFmt.format(stats.fifoCostPrice),
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            )),
-            // Inventory Value
-            DataCell(_FifoStatCell(
-              productId: p.id,
-              builder: (FifoProductStats stats) => Text(
-                currFmt.format(stats.inventoryValue),
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.accentTeal,
+            // Expiry with quick adjust button
+            DataCell(
+              Tooltip(
+                message: 'Click to adjust expiry date',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => _showUpdateExpiryDialog(context, p, expiryDateVal),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(expiryText,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: item.expiryStatus == 'Expired'
+                                      ? AppColors.statusRed
+                                      : item.expiryStatus == 'Expiring Soon'
+                                          ? AppColors.statusAmber
+                                          : null,
+                                )),
+                            const SizedBox(height: 2),
+                            expiryBadge,
+                          ],
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(Icons.edit_calendar_outlined, size: 15, color: AppColors.primary.withValues(alpha: 0.7)),
+                      ],
+                    ),
+                  ),
                 ),
               ),
+            ),
+            // Cost Price
+            DataCell(Text(
+              currFmt.format(p.cost),
+              style: const TextStyle(fontWeight: FontWeight.w600),
             )),
-            // Selling price (from product doc — no FIFO needed)
+            // Inventory Value = Cost * Stock Quantity
+            DataCell(Text(
+              currFmt.format(invValue),
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AppColors.accentTeal,
+              ),
+            )),
+            // Selling price
             DataCell(Text(currFmt.format(p.price))),
-            // Est. Profit
-            DataCell(_FifoStatCell(
-              productId: p.id,
-              builder: (FifoProductStats stats) {
-                final positive = stats.estimatedProfit >= 0;
-                return Text(
-                  currFmt.format(stats.estimatedProfit),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: positive ? AppColors.statusGreen : AppColors.statusRed,
-                  ),
-                );
-              },
-            )),
             // Stock status badge
             DataCell(stockBadge),
-            // Details button
+            // Actions (Details + Delete)
             DataCell(
-              OutlinedButton.icon(
-                icon: const Icon(Icons.open_in_new, size: 14),
-                label: const Text('Details'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.primary,
-                  side: const BorderSide(color: AppColors.primary),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  textStyle: const TextStyle(fontSize: 12),
-                ),
-                onPressed: () => context.go('/inventory/${p.id}'),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.open_in_new, size: 14),
+                    label: const Text('Details'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.primary),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () => context.go('/inventory/${p.id}'),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    color: AppColors.statusRed,
+                    tooltip: 'Delete Product',
+                    onPressed: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Delete Product'),
+                          content: Text('Are you sure you want to delete "${p.name}"?'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('Cancel'),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.statusRed,
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('Delete'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        await ref.read(firestoreProductsProvider.notifier).delete(p.id);
+                        if (context.mounted) {
+                          toastification.show(
+                            context: context,
+                            type: ToastificationType.success,
+                            title: const Text('Product Deleted'),
+                            description: Text('${p.name} was removed.'),
+                            autoCloseDuration: const Duration(seconds: 3),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ],
               ),
             ),
           ],
@@ -429,41 +692,12 @@ class _InventoryPageState extends ConsumerState<InventoryPage>
 
   Widget _badge(String text, Color color, Color bg) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration:
-          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)),
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
       child: Text(text,
           style: TextStyle(
-              color: color, fontSize: 11, fontWeight: FontWeight.bold)),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Lazy FIFO stat cell — watches productFifoStatsProvider only for its product
-// ---------------------------------------------------------------------------
-
-class _FifoStatCell extends ConsumerWidget {
-  final String productId;
-  final Widget Function(FifoProductStats stats) builder;
-
-  const _FifoStatCell({
-    required this.productId,
-    required this.builder,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final statsAsync = ref.watch(productFifoStatsProvider(productId));
-    return statsAsync.when(
-      loading: () => const SizedBox(
-        width: 16,
-        height: 16,
-        child: CircularProgressIndicator(strokeWidth: 1.5),
-      ),
-      error: (_, __) => const Text('—',
-          style: TextStyle(color: AppColors.textMuted)),
-      data: builder,
+              color: color, fontSize: 10, fontWeight: FontWeight.bold)),
     );
   }
 }

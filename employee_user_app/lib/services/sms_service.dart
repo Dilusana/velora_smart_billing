@@ -8,7 +8,7 @@ class SmsService {
   SmsService._();
 
   static const String _apiToken = '7012|ytbLSXpyeVUtvz8uFZA6KfiLFwc6NUa2opg7Q7bL0e04da3d';
-  static const String _senderId = 'TextLKDemo';
+  static const String _senderId = 'VeloraSmart';
 
   /// Normalizes Sri Lankan phone numbers (e.g., "0771234567" -> "94771234567")
   String? normalizeSriLankanPhone(String phone) {

@@ -37,7 +37,7 @@ class _NewOrderDialogState extends ConsumerState<NewOrderDialog> {
     );
 
     final List<ProductModel> products = productsAsync.maybeWhen(
-      data: (list) => list,
+      data: (list) => list.where((p) => !p.isExpired).toList(),
       orElse: () => [],
     );
 
@@ -81,6 +81,7 @@ class _NewOrderDialogState extends ConsumerState<NewOrderDialog> {
                     const Text('1. Customer Selection', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<CustomerModel>(
+                      isExpanded: true,
                       decoration: const InputDecoration(
                         labelText: 'Select Customer',
                         border: OutlineInputBorder(),
@@ -90,11 +91,11 @@ class _NewOrderDialogState extends ConsumerState<NewOrderDialog> {
                       items: [
                         const DropdownMenuItem<CustomerModel>(
                           value: null,
-                          child: Text('Walk-in Customer (Guest)'),
+                          child: Text('Walk-in Customer (Guest)', overflow: TextOverflow.ellipsis),
                         ),
                         ...customers.map((c) => DropdownMenuItem<CustomerModel>(
                               value: c,
-                              child: Text('${c.name} (${c.phone.isNotEmpty ? c.phone : c.email})'),
+                              child: Text('${c.name} (${c.phone.isNotEmpty ? c.phone : c.email})', overflow: TextOverflow.ellipsis),
                             )),
                       ],
                       onChanged: (val) => setState(() => _selectedCustomer = val),
@@ -172,10 +173,11 @@ class _NewOrderDialogState extends ConsumerState<NewOrderDialog> {
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
+                            isExpanded: true,
                             value: _paymentMethod,
                             decoration: const InputDecoration(labelText: 'Payment Method', border: OutlineInputBorder(), isDense: true),
                             items: ['Cash', 'Card', 'QR / Online', 'Pending']
-                                .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                                .map((m) => DropdownMenuItem(value: m, child: Text(m, overflow: TextOverflow.ellipsis)))
                                 .toList(),
                             onChanged: (val) {
                               if (val != null) setState(() => _paymentMethod = val);
@@ -185,10 +187,11 @@ class _NewOrderDialogState extends ConsumerState<NewOrderDialog> {
                         const SizedBox(width: 16),
                         Expanded(
                           child: DropdownButtonFormField<String>(
+                            isExpanded: true,
                             value: _branch,
                             decoration: const InputDecoration(labelText: 'Branch', border: OutlineInputBorder(), isDense: true),
                             items: ['Main Branch', 'Downtown Branch', 'Kiosk #1']
-                                .map((b) => DropdownMenuItem(value: b, child: Text(b)))
+                                .map((b) => DropdownMenuItem(value: b, child: Text(b, overflow: TextOverflow.ellipsis)))
                                 .toList(),
                             onChanged: (val) {
                               if (val != null) setState(() => _branch = val);

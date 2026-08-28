@@ -3,18 +3,26 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dart:async';
 import '../models/product_model.dart';
 import '../models/category_model.dart';
+import '../models/promotion_model.dart';
+import '../models/user_notification_model.dart';
 import '../repositories/category_repository.dart';
 import '../repositories/product_repository.dart';
+import '../repositories/promotion_repository.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/cart_service.dart';
 import '../services/firebase_auth_service.dart';
+import '../services/push_notification_service.dart';
 import '../widgets/product_quantity_modal.dart';
+import 'notifications_screen.dart';
 
 import 'explore_screen.dart';
 import 'cart_screen.dart';
 import 'category_screen.dart';
 import 'orders_screen.dart';
 import 'profile_screen.dart';
+import '../services/recommendation_service.dart';
+import '../services/user_activity_service.dart';
+import '../widgets/recommended_products_section.dart';
 
 
 // ─── Color Palette ────────────────────────────────────────────────────────────
@@ -216,7 +224,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       const SizedBox(height: 24),
                       _buildBannerCarousel(),
                       const SizedBox(height: 28),
-                      _buildSectionHeader('Recommended for You', 'View All'),
+                      // ── Personalized Recommendation Carousel ─────────────
+                      RecommendedProductsSection(
+                        title: 'Recommended for You',
+                        subtitle: 'Personalized based on your activity & favorites',
+                        badgeText: 'FOR YOU',
+                        type: RecommendationSectionType.personalized,
+                        fetchProducts: () => RecommendationService.instance.getPersonalizedRecommendations(limit: 8),
+                      ),
+                      const SizedBox(height: 28),
+                      _buildSectionHeader('Explore All Products', 'View All'),
                       const SizedBox(height: 14),
                       StreamBuilder<List<ProductModel>>(
                         stream: ProductRepository.instance.getProductsStream(),
@@ -259,22 +276,73 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         child: Row(
           children: [
             const Spacer(),
-            // Notification button
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: VeloraColors.cardBg,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+            // Notification button with real-time unread badge
+            StreamBuilder<List<UserNotificationModel>>(
+              stream: PushNotificationService.instance.getUserNotificationsStream(),
+              builder: (context, snapshot) {
+                final unread = (snapshot.data ?? []).where((n) => !n.isRead).length;
+
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      PageRouteBuilder(
+                        pageBuilder: (ctx, anim, _) => const NotificationsScreen(),
+                        transitionsBuilder: (ctx, anim, _, child) => SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(1.0, 0.0),
+                            end: Offset.zero,
+                          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                          child: child,
+                        ),
+                        transitionDuration: const Duration(milliseconds: 350),
+                      ),
+                    );
+                  },
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: VeloraColors.cardBg,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.06),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.notifications_none_rounded, color: VeloraColors.navy, size: 20),
+                      ),
+                      if (unread > 0)
+                        Positioned(
+                          right: -2,
+                          top: -2,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Colors.redAccent,
+                              shape: BoxShape.circle,
+                            ),
+                            constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                            child: Text(
+                              '$unread',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                ],
-              ),
-              child: const Icon(Icons.notifications_none_rounded, color: VeloraColors.navy, size: 20),
+                );
+              },
             ),
             const SizedBox(width: 10),
             // Avatar (Tap to direct to ProfileScreen)
@@ -683,6 +751,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
                   return GestureDetector(
                     onTap: () {
+                      UserActivityService.instance.logCategoryView(cat.title, categoryId: cat.id);
                       setState(() => _selectedCategory = i);
                       Navigator.of(context).push(
                         PageRouteBuilder(
@@ -813,36 +882,239 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // ─── Banner Carousel ─────────────────────────────────────────────────────
 
+  // ─── Banner Carousel (Live from Firestore Promotions / Cloudinary) ────────
+
   Widget _buildBannerCarousel() {
-    return Column(
-      children: [
-        SizedBox(
-          height: 190,
-          child: PageView.builder(
-            controller: _bannerController,
-            itemCount: _banners.length,
-            onPageChanged: (i) => setState(() => _bannerPage = i),
-            itemBuilder: (ctx, i) => _buildBannerCard(_banners[i]),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(
-            _banners.length,
-            (i) => AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: _bannerPage == i ? 22 : 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: _bannerPage == i ? VeloraColors.limeDeep : VeloraColors.divider,
-                borderRadius: BorderRadius.circular(4),
+    return StreamBuilder<List<PromotionModel>>(
+      stream: PromotionRepository.instance.getPromotionsStream(),
+      builder: (context, snapshot) {
+        final List<PromotionModel> livePromos = (snapshot.hasData && snapshot.data!.isNotEmpty)
+            ? snapshot.data!
+            : [];
+
+        final int totalItems = livePromos.isNotEmpty ? livePromos.length : _banners.length;
+
+        return Column(
+          children: [
+            SizedBox(
+              height: 190,
+              child: PageView.builder(
+                controller: _bannerController,
+                itemCount: totalItems,
+                onPageChanged: (i) => setState(() => _bannerPage = i),
+                itemBuilder: (ctx, i) {
+                  if (livePromos.isNotEmpty) {
+                    return _buildLivePromoBannerCard(livePromos[i]);
+                  }
+                  return _buildBannerCard(_banners[i]);
+                },
               ),
             ),
-          ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                totalItems,
+                (i) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: _bannerPage == i ? 22 : 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: _bannerPage == i ? VeloraColors.limeDeep : VeloraColors.divider,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildLivePromoBannerCard(PromotionModel promo) {
+    String discountBadge = promo.type;
+    if (promo.type == 'Discount %' && promo.value > 0) {
+      discountBadge = '${promo.value.toInt()}% OFF';
+    } else if (promo.type == 'Flat Off' && promo.value > 0) {
+      discountBadge = 'Rs. ${promo.value.toInt()} OFF';
+    } else if (promo.type == 'BOGO') {
+      discountBadge = 'BUY 1 GET 1';
+    }
+
+    final hasWebImage = promo.imageUrl.isNotEmpty &&
+        (promo.imageUrl.startsWith('http://') || promo.imageUrl.startsWith('https://'));
+
+    // Select theme colors based on promo type
+    Color bannerBgColor = const Color(0xFF1A2D5A);
+    if (promo.type.toLowerCase().contains('bogo')) {
+      bannerBgColor = const Color(0xFF4C1D95);
+    } else if (promo.value >= 25) {
+      bannerBgColor = const Color(0xFF831843);
+    } else if (promo.scope.toLowerCase().contains('veg') || promo.scope.toLowerCase().contains('fruit')) {
+      bannerBgColor = const Color(0xFF2D4A1E);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        decoration: BoxDecoration(
+          color: bannerBgColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: bannerBgColor.withValues(alpha: 0.4),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
-      ],
+        clipBehavior: Clip.hardEdge,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // If user uploaded a full 16:9 banner image, display it with nice overlay
+            if (hasWebImage)
+              Positioned.fill(
+                child: Image.network(
+                  promo.imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: bannerBgColor,
+                    child: const Center(
+                      child: Icon(Icons.local_offer_rounded, color: VeloraColors.lime, size: 48),
+                    ),
+                  ),
+                ),
+              ),
+
+            // Gradient overlay to ensure text and badges pop with full readability
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      hasWebImage ? Colors.black.withValues(alpha: 0.75) : bannerBgColor,
+                      hasWebImage ? Colors.black.withValues(alpha: 0.25) : bannerBgColor.withValues(alpha: 0.85),
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.65, 1.0],
+                  ),
+                ),
+              ),
+            ),
+
+            // Decorative shapes when no image or behind image
+            if (!hasWebImage) ...[
+              Positioned(
+                right: -30,
+                top: -30,
+                child: Container(
+                  width: 140,
+                  height: 140,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 20,
+                bottom: 20,
+                child: Container(
+                  width: 70,
+                  height: 70,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.local_offer_rounded, color: VeloraColors.lime, size: 36),
+                ),
+              ),
+            ],
+
+            // Text Content
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              right: 80,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 8, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: VeloraColors.lime,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        discountBadge.toUpperCase(),
+                        style: GoogleFonts.outfit(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: VeloraColors.navy,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Flexible(
+                      child: Text(
+                        promo.name,
+                        style: GoogleFonts.outfit(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          height: 1.15,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      promo.description.isNotEmpty
+                          ? promo.description
+                          : (promo.couponCode.isNotEmpty ? 'Use Code: ${promo.couponCode}' : 'Limited Time Promotion'),
+                      style: GoogleFonts.outfit(
+                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: VeloraColors.lime,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        promo.couponCode.isNotEmpty ? 'Code: ${promo.couponCode}' : 'Shop Now',
+                        style: GoogleFonts.outfit(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: VeloraColors.navy,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1114,9 +1386,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
     final bool isNetworkImage = imgPath.startsWith('http://') || imgPath.startsWith('https://');
 
-    return Container(
-      width: 154,
-      margin: const EdgeInsets.symmetric(horizontal: 6),
+    return GestureDetector(
+      onTap: () {
+        UserActivityService.instance.logProductView(
+          productId: item.id,
+          productName: item.name,
+          categoryId: item.categoryId,
+          categoryName: item.category,
+        );
+        ProductQuantityModal.show(
+          context,
+          productId: item.id,
+          productName: item.name,
+          category: item.category,
+          unit: item.unit,
+          basePrice: item.price,
+          imageUrl: item.imageUrl,
+        );
+      },
+      child: Container(
+        width: 154,
+        margin: const EdgeInsets.symmetric(horizontal: 6),
       decoration: BoxDecoration(
         color: VeloraColors.cardBg,
         borderRadius: BorderRadius.circular(18),
@@ -1228,8 +1518,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildProductFallbackBg(ProductModel item) {
     IconData icon = Icons.shopping_basket_rounded;

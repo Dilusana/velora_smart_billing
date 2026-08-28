@@ -1,0 +1,17 @@
+name,sku,category,price,cost,stock,unit,status,imageUrl,description
+Fresh Whole Milk 1L,VEL1001,chilledfood,350.0,300.0,50,piece,active,assets/images/milk.png,Pasteurized fresh whole milk
+Cheddar Cheese 250g,VEL1002,chilledfood,750.0,620.0,35,piece,active,,Premium rich cheddar cheese
+Salted Creamery Butter 200g,VEL1003,chilledfood,620.0,500.0,40,piece,active,,Creamy salted butter
+White Sandwich Bread 450g,VEL1004,grocery,180.0,140.0,60,piece,active,,Freshly baked sliced white bread
+Basmati Rice 5kg,VEL1005,grocery,2200.0,1850.0,45,piece,active,,Long grain aromatic basmati rice
+Pure Coconut Oil 1L,VEL1006,grocery,850.0,720.0,30,piece,active,,100% pure edible coconut oil
+Fresh Red Tomatoes,VEL1007,vegetable & fruits,120.0,80.0,50,kg,active,,Farm fresh ripe red tomatoes
+Fresh Cavendish Bananas,VEL1008,vegetable & fruits,180.0,120.0,40,kg,active,,Sweet ripe yellow bananas
+Green Bell Pepper (Capsicum),VEL1009,vegetable & fruits,320.0,240.0,25,kg,active,,Crisp fresh green bell peppers
+Ceylon Black Tea 400g,VEL1010,beverages,550.0,420.0,55,piece,active,,Premium high grown Ceylon black tea
+Natural Mineral Water 1.5L,VEL1011,beverages,120.0,80.0,100,piece,active,,Pure bottled spring water
+Fresh Orange Juice 1L,VEL1012,beverages,480.0,380.0,30,piece,active,,100% natural citrus juice
+Chicken Sausage 500g,VEL1013,frozenfoods,850.0,680.0,30,piece,active,,Delicious frozen chicken sausages
+Mixed Vegetable Pack 500g,VEL1014,frozenfoods,450.0,350.0,40,piece,active,,Frozen peas carrots and sweetcorn
+Harpic Toilet Cleaner 750ml,VEL1015,household,320.0,250.0,50,piece,active,,Powerful germ disinfectant cleaner
+Sunlight Dishwashing Liquid 500ml,VEL1016,household,260.0,200.0,45,piece,active,,Lemon dish wash power liquid

@@ -1,12 +1,16 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:data_table_2/data_table_2.dart';
 import 'package:toastification/toastification.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/data/models.dart';
+import '../../core/services/cloudinary_service.dart';
 import '../categories/category_provider.dart';
 import '../products/product_providers.dart';
 import 'promotion_providers.dart';
@@ -76,6 +80,12 @@ class _PromotionsPageState extends ConsumerState<PromotionsPage> {
     List<String> selectedCategories = List.from(promoToEdit?.applicableCategories ?? []);
     List<String> selectedProducts = List.from(promoToEdit?.applicableProducts ?? []);
 
+    String currentImageUrl = promoToEdit?.imageUrl ?? '';
+    Uint8List? selectedImageBytes;
+    String selectedImageName = '';
+    bool isUploadingImage = false;
+    double uploadProgress = 0.0;
+
     showDialog(
       context: context,
       builder: (ctx) {
@@ -84,6 +94,83 @@ class _PromotionsPageState extends ConsumerState<PromotionsPage> {
           builder: (context, setDialogState) {
             final categoriesAsync = ref.watch(categoriesFirestoreProvider);
             final productsAsync = ref.watch(firestoreProductsProvider);
+
+            Future<void> pickAndUploadImage() async {
+              Uint8List? rawBytes;
+              String? fileName;
+
+              try {
+                final result = await FilePicker.pickFiles(
+                  type: FileType.custom,
+                  allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
+                  allowMultiple: false,
+                  withData: true,
+                );
+
+                if (result != null && result.files.isNotEmpty && result.files.first.bytes != null) {
+                  rawBytes = result.files.first.bytes;
+                  fileName = result.files.first.name;
+                }
+              } catch (_) {
+                try {
+                  final picker = ImagePicker();
+                  final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+                  if (pickedFile != null) {
+                    rawBytes = await pickedFile.readAsBytes();
+                    fileName = pickedFile.name;
+                  }
+                } catch (e) {
+                  debugPrint('Image pick error: $e');
+                }
+              }
+
+              if (rawBytes == null) return;
+
+              setDialogState(() {
+                selectedImageBytes = rawBytes;
+                selectedImageName = fileName ?? 'promo_banner.jpg';
+                isUploadingImage = true;
+                uploadProgress = 0.15;
+              });
+
+              try {
+                final uploadedUrl = await CloudinaryService.uploadImage(
+                  imageBytes: rawBytes,
+                  fileName: selectedImageName,
+                  onProgress: (p) {
+                    setDialogState(() {
+                      uploadProgress = p;
+                    });
+                  },
+                );
+
+                setDialogState(() {
+                  currentImageUrl = uploadedUrl;
+                  isUploadingImage = false;
+                });
+
+                if (mounted) {
+                  toastification.show(
+                    context: context,
+                    title: const Text('Banner Uploaded'),
+                    description: const Text('16:9 promotion banner uploaded to Cloudinary successfully.'),
+                    type: ToastificationType.success,
+                  );
+                }
+              } catch (e) {
+                setDialogState(() {
+                  isUploadingImage = false;
+                });
+                if (mounted) {
+                  toastification.show(
+                    context: context,
+                    title: const Text('Upload Failed'),
+                    description: Text(e.toString()),
+                    type: ToastificationType.error,
+                  );
+                }
+              }
+            }
 
             return Dialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -116,6 +203,133 @@ class _PromotionsPageState extends ConsumerState<PromotionsPage> {
                         ],
                       ),
                       const Divider(height: 24),
+
+                      // 16:9 Banner Image Picker Section
+                      const Text(
+                        'Promotion Banner (16:9 Aspect Ratio) *',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.grey.shade900 : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: currentImageUrl.isNotEmpty ? AppColors.primary : Colors.grey.shade400,
+                              width: currentImageUrl.isNotEmpty ? 2 : 1,
+                            ),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(11),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                if (selectedImageBytes != null)
+                                  Image.memory(
+                                    selectedImageBytes!,
+                                    fit: BoxFit.cover,
+                                  )
+                                else if (currentImageUrl.isNotEmpty)
+                                  Image.network(
+                                    currentImageUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Center(
+                                      child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
+                                    ),
+                                  )
+                                else
+                                  Center(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.add_photo_alternate_outlined, size: 48, color: Colors.grey.shade500),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Add 16:9 Promotion Banner Image',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.grey.shade700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Connects directly to Cloudinary (Recommended: 1280x720 or 1920x1080)',
+                                          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                if (isUploadingImage)
+                                  Container(
+                                    color: Colors.black54,
+                                    child: Center(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const CircularProgressIndicator(color: Colors.white),
+                                          const SizedBox(height: 12),
+                                          Text(
+                                            'Uploading to Cloudinary... ${(uploadProgress * 100).toInt()}%',
+                                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                Positioned(
+                                  right: 12,
+                                  bottom: 12,
+                                  child: ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primary,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    ),
+                                    icon: Icon(
+                                      currentImageUrl.isNotEmpty ? Icons.change_circle : Icons.upload_file,
+                                      size: 18,
+                                    ),
+                                    label: Text(
+                                      currentImageUrl.isNotEmpty ? 'Change Image' : 'Choose 16:9 Image',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                    ),
+                                    onPressed: isUploadingImage ? null : pickAndUploadImage,
+                                  ),
+                                ),
+                                if (currentImageUrl.isNotEmpty && !isUploadingImage)
+                                  Positioned(
+                                    left: 12,
+                                    bottom: 12,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.7),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.cloud_done, color: Colors.greenAccent, size: 14),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            'Cloudinary Synced',
+                                            style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
                       Row(
                         children: [
                           Expanded(
@@ -148,6 +362,7 @@ class _PromotionsPageState extends ConsumerState<PromotionsPage> {
                         children: [
                           Expanded(
                             child: DropdownButtonFormField<String>(
+                              isExpanded: true,
                               value: ['Discount %', 'Flat Off', 'BOGO', 'monthly', 'Coupon'].contains(selectedType)
                                   ? selectedType
                                   : 'Discount %',
@@ -157,7 +372,7 @@ class _PromotionsPageState extends ConsumerState<PromotionsPage> {
                                 isDense: true,
                               ),
                               items: ['Discount %', 'Flat Off', 'BOGO', 'monthly', 'Coupon']
-                                  .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                                  .map((e) => DropdownMenuItem(value: e, child: Text(e, overflow: TextOverflow.ellipsis)))
                                   .toList(),
                               onChanged: (val) {
                                 if (val != null) setDialogState(() => selectedType = val);
@@ -167,6 +382,7 @@ class _PromotionsPageState extends ConsumerState<PromotionsPage> {
                           const SizedBox(width: 16),
                           Expanded(
                             child: DropdownButtonFormField<String>(
+                              isExpanded: true,
                               value: ['All Products', 'Specific Category', 'Specific Products'].contains(selectedScope)
                                   ? selectedScope
                                   : 'All Products',
@@ -176,7 +392,7 @@ class _PromotionsPageState extends ConsumerState<PromotionsPage> {
                                 isDense: true,
                               ),
                               items: ['All Products', 'Specific Category', 'Specific Products']
-                                  .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                                  .map((e) => DropdownMenuItem(value: e, child: Text(e, overflow: TextOverflow.ellipsis)))
                                   .toList(),
                               onChanged: (val) {
                                 if (val != null) setDialogState(() => selectedScope = val);
@@ -190,26 +406,48 @@ class _PromotionsPageState extends ConsumerState<PromotionsPage> {
                         categoriesAsync.when(
                           loading: () => const LinearProgressIndicator(),
                           error: (_, __) => const SizedBox(),
-                          data: (cats) => DropdownButtonFormField<String>(
-                            decoration: const InputDecoration(
-                              labelText: 'Select Target Category',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                            value: selectedCategories.isNotEmpty && cats.any((c) => c.name == selectedCategories.first || c.id == selectedCategories.first)
-                                ? cats.firstWhere((c) => c.name == selectedCategories.first || c.id == selectedCategories.first).name
-                                : null,
-                            items: cats
-                                .map((c) => DropdownMenuItem(value: c.name, child: Text(c.name)))
-                                .toList(),
-                            onChanged: (val) {
-                              if (val != null) {
-                                setDialogState(() {
-                                  selectedCategories = [val];
-                                });
+                          data: (cats) {
+                            // Deduplicate categories by name / id
+                            final uniqueCats = <String, String>{};
+                            for (final c in cats) {
+                              if (c.name.trim().isNotEmpty) {
+                                uniqueCats[c.id.isNotEmpty ? c.id : c.name] = c.name;
                               }
-                            },
-                          ),
+                            }
+
+                            final String? currentValue = selectedCategories.isNotEmpty
+                                ? (uniqueCats.containsKey(selectedCategories.first)
+                                    ? selectedCategories.first
+                                    : (uniqueCats.containsValue(selectedCategories.first)
+                                        ? uniqueCats.entries.firstWhere((e) => e.value == selectedCategories.first).key
+                                        : null))
+                                : null;
+
+                            return DropdownButtonFormField<String>(
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Select Target Category',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                              value: currentValue,
+                              hint: const Text('Choose a category'),
+                              items: uniqueCats.entries
+                                  .map((entry) => DropdownMenuItem<String>(
+                                        value: entry.key,
+                                        child: Text(entry.value, overflow: TextOverflow.ellipsis),
+                                      ))
+                                  .toList(),
+                              onChanged: (val) {
+                                if (val != null) {
+                                  final catName = uniqueCats[val] ?? val;
+                                  setDialogState(() {
+                                    selectedCategories = [catName];
+                                  });
+                                }
+                              },
+                            );
+                          },
                         ),
                       ],
                       if (selectedScope == 'Specific Products') ...[
@@ -217,26 +455,50 @@ class _PromotionsPageState extends ConsumerState<PromotionsPage> {
                         productsAsync.when(
                           loading: () => const LinearProgressIndicator(),
                           error: (_, __) => const SizedBox(),
-                          data: (prods) => DropdownButtonFormField<String>(
-                            decoration: const InputDecoration(
-                              labelText: 'Select Target Product',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                            value: selectedProducts.isNotEmpty && prods.any((p) => p.name == selectedProducts.first || p.id == selectedProducts.first)
-                                ? prods.firstWhere((p) => p.name == selectedProducts.first || p.id == selectedProducts.first).name
-                                : null,
-                            items: prods
-                                .map((p) => DropdownMenuItem(value: p.name, child: Text(p.name)))
-                                .toList(),
-                            onChanged: (val) {
-                              if (val != null) {
-                                setDialogState(() {
-                                  selectedProducts = [val];
-                                });
+                          data: (prods) {
+                            // Deduplicate products by id and name
+                            final uniqueProds = <String, String>{};
+                            for (final p in prods) {
+                              final name = p.name.trim();
+                              if (name.isNotEmpty) {
+                                final id = p.id.isNotEmpty ? p.id : name;
+                                uniqueProds[id] = name;
                               }
-                            },
-                          ),
+                            }
+
+                            final String? currentProdValue = selectedProducts.isNotEmpty
+                                ? (uniqueProds.containsKey(selectedProducts.first)
+                                    ? selectedProducts.first
+                                    : (uniqueProds.containsValue(selectedProducts.first)
+                                        ? uniqueProds.entries.firstWhere((e) => e.value == selectedProducts.first).key
+                                        : null))
+                                : null;
+
+                            return DropdownButtonFormField<String>(
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Select Target Product',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                              value: currentProdValue,
+                              hint: const Text('Choose a product'),
+                              items: uniqueProds.entries
+                                  .map((entry) => DropdownMenuItem<String>(
+                                        value: entry.key,
+                                        child: Text(entry.value, overflow: TextOverflow.ellipsis),
+                                      ))
+                                  .toList(),
+                              onChanged: (val) {
+                                if (val != null) {
+                                  final prodName = uniqueProds[val] ?? val;
+                                  setDialogState(() {
+                                    selectedProducts = [prodName];
+                                  });
+                                }
+                              },
+                            );
+                          },
                         ),
                       ],
                       const SizedBox(height: 16),
@@ -371,6 +633,7 @@ class _PromotionsPageState extends ConsumerState<PromotionsPage> {
                                 maximumDiscount: maxDisc,
                                 applicableCategories: selectedCategories,
                                 applicableProducts: selectedProducts,
+                                imageUrl: currentImageUrl,
                               );
 
                               try {
@@ -848,6 +1111,7 @@ class _PromotionsPageState extends ConsumerState<PromotionsPage> {
                           ),
                           size: ColumnSize.S,
                         ),
+                        const DataColumn2(label: Text('Banner'), size: ColumnSize.S),
                         const DataColumn2(label: Text('Promo Name'), size: ColumnSize.L),
                         const DataColumn2(label: Text('Type'), size: ColumnSize.M),
                         const DataColumn2(label: Text('Scope'), size: ColumnSize.M),
@@ -875,6 +1139,26 @@ class _PromotionsPageState extends ConsumerState<PromotionsPage> {
                                     }
                                   });
                                 },
+                              ),
+                            ),
+                            DataCell(
+                              Container(
+                                width: 56,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(6),
+                                  color: Colors.grey.shade200,
+                                ),
+                                clipBehavior: Clip.hardEdge,
+                                child: promo.imageUrl.isNotEmpty
+                                    ? Image.network(
+                                        promo.imageUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 16, color: Colors.grey),
+                                      )
+                                    : const Center(
+                                        child: Icon(Icons.local_offer, size: 16, color: Colors.grey),
+                                      ),
                               ),
                             ),
                             DataCell(

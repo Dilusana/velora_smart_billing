@@ -215,40 +215,70 @@ class OrderService {
       }
       await _ordersCol.doc(docId).update(updateData);
 
-      // Trigger automatic SMS notification to customer if status is Completed / Ready / Arrived
-      if (newStatus.toLowerCase() == 'completed' || newStatus.toLowerCase() == 'ready') {
-        _ordersCol.doc(docId).get().then((docSnapshot) {
-          if (docSnapshot.exists) {
-            final order = OrderModel.fromFirestore(docSnapshot);
-            if (order.customerPhone.isNotEmpty) {
-              SmsService.instance.sendOrderCompletedSms(
-                orderDocId: order.id,
-                customerPhone: order.customerPhone,
-                customerName: order.customerName,
-                totalAmount: order.total,
-              );
-            }
+      // Trigger automatic in-app & push notification to customer for status changes
+      _ordersCol.doc(docId).get().then((docSnapshot) async {
+        if (!docSnapshot.exists) return;
+        final data = docSnapshot.data() as Map<String, dynamic>? ?? {};
+        final order = OrderModel.fromFirestore(docSnapshot);
+        final String targetCustomerId = (data['customerId'] ?? '').toString();
+        final String displayId = order.displayId.isNotEmpty ? order.displayId : docId;
+
+        String notifTitle = 'Order Update: $displayId';
+        String notifBody = 'Your order status is now $newStatus.';
+
+        if (newStatus.toLowerCase() == 'ready') {
+          notifTitle = 'Order Ready! 📦';
+          notifBody = 'Your order $displayId has been prepared and is ready for pickup/delivery.';
+        } else if (newStatus.toLowerCase() == 'out for delivery' || newStatus.toLowerCase() == 'out') {
+          notifTitle = 'Out for Delivery 🛵';
+          notifBody = 'Courier is heading to your location with order $displayId.';
+        } else if (newStatus.toLowerCase() == 'arrived') {
+          notifTitle = 'Driver Arrived 📍';
+          notifBody = 'Your courier has arrived at your address with order $displayId.';
+        } else if (newStatus.toLowerCase() == 'delivered' || newStatus.toLowerCase() == 'collected' || newStatus.toLowerCase() == 'completed') {
+          notifTitle = 'Order Completed 🎉';
+          notifBody = 'Thank you for shopping with Velora! Your order $displayId has been completed.';
+        }
+
+        // Post notification doc into notifications collection (triggers Cloud Function push notification + in-app stream)
+        try {
+          await FirebaseFirestore.instance.collection('notifications').add({
+            'title': notifTitle,
+            'message': notifBody,
+            'body': notifBody,
+            'targetType': 'user',
+            'targetUserId': targetCustomerId.isNotEmpty ? targetCustomerId : 'cust_user_app_01',
+            'orderId': docId,
+            'status': 'Pending',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          debugPrint('Error creating customer notification doc: $e');
+        }
+
+        // Send SMS via Text.lk if applicable
+        if (newStatus.toLowerCase() == 'completed' || newStatus.toLowerCase() == 'ready') {
+          if (order.customerPhone.isNotEmpty) {
+            SmsService.instance.sendOrderCompletedSms(
+              orderDocId: order.id,
+              customerPhone: order.customerPhone,
+              customerName: order.customerName,
+              totalAmount: order.total,
+            );
           }
-        }).catchError((e) {
-          debugPrint('Error triggering completion SMS: $e');
-        });
-      } else if (newStatus.toLowerCase() == 'arrived') {
-        _ordersCol.doc(docId).get().then((docSnapshot) {
-          if (docSnapshot.exists) {
-            final order = OrderModel.fromFirestore(docSnapshot);
-            if (order.customerPhone.isNotEmpty) {
-              SmsService.instance.sendDriverArrivedSms(
-                orderDocId: order.id,
-                customerPhone: order.customerPhone,
-                customerName: order.customerName,
-                driverName: order.driverName.isNotEmpty ? order.driverName : null,
-              );
-            }
+        } else if (newStatus.toLowerCase() == 'arrived') {
+          if (order.customerPhone.isNotEmpty) {
+            SmsService.instance.sendDriverArrivedSms(
+              orderDocId: order.id,
+              customerPhone: order.customerPhone,
+              customerName: order.customerName,
+              driverName: order.driverName.isNotEmpty ? order.driverName : null,
+            );
           }
-        }).catchError((e) {
-          debugPrint('Error triggering arrival SMS: $e');
-        });
-      }
+        }
+      }).catchError((e) {
+        debugPrint('Error triggering notifications / SMS: $e');
+      });
 
       return true;
     } catch (e) {
@@ -296,6 +326,7 @@ class OrderService {
 
       if (itemIndex < 0 || itemIndex >= items.length) return false;
 
+      final bool previousAllPicked = (data['items'] as List<dynamic>? ?? []).every((i) => (i as Map)['isPicked'] == true);
       items[itemIndex]['isPicked'] = isPicked;
 
       // Check if all items picked -> auto update status to Packing / Ready if appropriate
@@ -309,6 +340,24 @@ class OrderService {
         'items': items,
         'status': currentStatus,
       });
+
+      // If status newly became Ready from all items picked, notify user
+      if (allPicked && !previousAllPicked) {
+        final String targetCustomerId = (data['customerId'] ?? '').toString();
+        final String displayId = (data['orderId'] ?? docId).toString();
+        try {
+          await FirebaseFirestore.instance.collection('notifications').add({
+            'title': 'Items Picked & Packed! 📦',
+            'message': 'All items in your order $displayId have been gathered and verified by our store team.',
+            'body': 'All items in your order $displayId have been gathered and verified by our store team.',
+            'targetType': 'user',
+            'targetUserId': targetCustomerId.isNotEmpty ? targetCustomerId : 'cust_user_app_01',
+            'orderId': docId,
+            'status': 'Pending',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        } catch (_) {}
+      }
 
       return true;
     } catch (e) {

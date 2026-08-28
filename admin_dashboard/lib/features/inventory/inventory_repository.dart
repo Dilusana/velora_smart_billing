@@ -279,19 +279,89 @@ class InventoryRepository {
     });
   }
 
-  /// Stream of FIFO-enriched sale records for a product.
+  /// Stream of FIFO-enriched sale records and real-time orders for a product.
   Stream<List<SaleLineItemModel>> getSaleLineItemsForProduct(String productId) {
-    return _saleLineItems
-        .where('productId', isEqualTo: productId)
-        .snapshots()
-        .map((snap) {
-      final list = snap.docs
-          .map((doc) => SaleLineItemModel.fromMap(
-              doc.id, doc.data() as Map<String, dynamic>))
-          .toList();
+    return _db.collection('orders').snapshots().asyncMap((ordersSnap) async {
+      // 1. Fetch sale_line_items for this product (if any)
+      final saleSnap = await _saleLineItems
+          .where('productId', isEqualTo: productId)
+          .get();
+
+      final saleLineMap = <String, SaleLineItemModel>{};
+      for (final doc in saleSnap.docs) {
+        final sli = SaleLineItemModel.fromMap(
+            doc.id, doc.data() as Map<String, dynamic>);
+        saleLineMap[sli.orderId] = sli;
+      }
+
+      // 2. Fetch product details to match by ID, SKU, or name
+      String productName = '';
+      String productSku = '';
+      double productCost = 0.0;
+      try {
+        final prodDoc = await _products.doc(productId).get();
+        if (prodDoc.exists) {
+          final pData = prodDoc.data() as Map<String, dynamic>;
+          productName = (pData['name'] ?? '').toString().toLowerCase().trim();
+          productSku = (pData['sku'] ?? '').toString().toLowerCase().trim();
+          productCost = (pData['cost'] as num?)?.toDouble() ?? 0.0;
+        }
+      } catch (_) {}
+
+      final results = <SaleLineItemModel>[];
+      final processedOrderIds = <String>{};
+
+      // 3. Process all orders that include this product
+      for (final doc in ordersSnap.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final order = OrderModel.fromMap(data, docId: doc.id);
+        final statusLower = order.status.toLowerCase().trim();
+        if (statusLower == 'cancelled' || statusLower == 'canceled') continue;
+
+        for (final item in order.items) {
+          final itemPid = item.productId.toLowerCase().trim();
+          final matchesId = item.productId == productId || itemPid == productId.toLowerCase().trim();
+          final matchesSku = productSku.isNotEmpty && itemPid == productSku;
+          final matchesName = productName.isNotEmpty && item.productName.toLowerCase().trim() == productName;
+
+          if (matchesId || matchesSku || matchesName) {
+            if (saleLineMap.containsKey(order.id)) {
+              results.add(saleLineMap[order.id]!);
+              processedOrderIds.add(order.id);
+            } else {
+              final double cogs = item.cogs ?? (item.quantity * productCost);
+              final double revenue = item.total > 0 ? item.total : (item.quantity * item.unitPrice);
+              final double profit = item.profit ?? (revenue - cogs);
+
+              results.add(SaleLineItemModel(
+                id: '${order.id}_${item.productId}',
+                orderId: order.id,
+                productId: productId,
+                productName: item.productName.isNotEmpty ? item.productName : productName,
+                quantitySold: item.quantity,
+                sellingPrice: item.unitPrice,
+                totalRevenue: revenue,
+                cogs: cogs,
+                profit: profit,
+                saleDate: order.createdAt,
+                batchConsumptions: item.batchConsumptions,
+              ));
+              processedOrderIds.add(order.id);
+            }
+          }
+        }
+      }
+
+      // 4. Add any sale_line_items not covered in orders
+      for (final entry in saleLineMap.entries) {
+        if (!processedOrderIds.contains(entry.key)) {
+          results.add(entry.value);
+        }
+      }
+
       // Sort newest first
-      list.sort((a, b) => b.saleDate.compareTo(a.saleDate));
-      return list;
+      results.sort((a, b) => b.saleDate.compareTo(a.saleDate));
+      return results;
     });
   }
 

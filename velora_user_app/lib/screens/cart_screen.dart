@@ -4,6 +4,9 @@ import '../services/cart_service.dart';
 import '../models/cart_item.dart' as db_cart;
 import 'home_screen.dart' show VeloraColors;
 import 'checkout_screen.dart';
+import '../services/recommendation_service.dart';
+import '../services/user_activity_service.dart';
+import '../widgets/recommended_products_section.dart';
 
 // ─── Cart Item UI Model ───────────────────────────────────────────────────────
 
@@ -84,6 +87,11 @@ class _CartScreenState extends State<CartScreen> {
 
   void _remove(CartItem item) {
     if (item.source != null) {
+      UserActivityService.instance.logRemoveFromCart(
+        productId: item.source!.productId,
+        productName: item.name,
+        categoryName: item.source!.category,
+      );
       CartService.instance.removeItem(item.source!);
     }
   }
@@ -172,6 +180,21 @@ class _CartScreenState extends State<CartScreen> {
                               onRemove: () => _remove(items[i]),
                             ),
                             childCount: items.length,
+                          ),
+                        ),
+                      ),
+
+                    // ── Complete Your Order (Recommendations) ─────────
+                    if (items.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 24, bottom: 4),
+                          child: RecommendedProductsSection(
+                            title: 'Complete Your Order',
+                            subtitle: 'Frequently paired with items in your cart',
+                            badgeText: 'PAIR WITH',
+                            type: RecommendationSectionType.cartCrossSell,
+                            fetchProducts: () => RecommendationService.instance.getCartRecommendations(limit: 6),
                           ),
                         ),
                       ),

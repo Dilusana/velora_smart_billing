@@ -8,6 +8,8 @@ import 'my_cart_page.dart';
 import 'app_theme.dart';
 import 'product_model.dart';
 import 'product_repository.dart';
+import 'promotion_model.dart';
+import 'promotion_repository.dart';
 
 enum DealSort { newest, priceAsc, priceDesc }
 
@@ -115,79 +117,109 @@ class _AllDealsPageState extends State<AllDealsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: StreamBuilder<List<ProductModel>>(
-        stream: KioskProductRepository.instance.getProductsStream(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-            return _buildScaffoldLayout(
-              child: const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(color: _green),
-                    SizedBox(height: 16),
-                    Text('Loading products from Firestore...'),
-                  ],
-                ),
-              ),
-              count: 0,
-            );
-          }
+      body: StreamBuilder<List<PromotionModel>>(
+        stream: KioskPromotionRepository.instance.getPromotionsStream(),
+        builder: (context, promoSnapshot) {
+          final activePromotions =
+              promoSnapshot.data ?? PromotionModel.fallbackPromotions;
 
-          if (snapshot.hasError) {
-            return _buildScaffoldLayout(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline_rounded, size: 60, color: Colors.red),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Failed to load products: ${snapshot.error}',
-                      style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-              ),
-              count: 0,
-            );
-          }
-
-          final allProducts = snapshot.data ?? [];
-          final filteredProducts = _filterAndSortProducts(allProducts);
-
-          return _buildScaffoldLayout(
-            count: filteredProducts.length,
-            child: filteredProducts.isEmpty
-                ? _buildEmpty()
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                    itemCount: filteredProducts.length,
-                    separatorBuilder: (_, __) =>
-                        const Divider(height: 1, thickness: 1, color: Color(0xFFEEEEEE)),
-                    itemBuilder: (_, i) => _DealCard(
-                      product: filteredProducts[i],
-                      onAddToCart: () => _addToCart(filteredProducts[i]),
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => DealProductDetailPage(
-                            product: filteredProducts[i],
-                          ),
-                        ),
-                      ).then((_) => _refreshCart()),
+          return StreamBuilder<List<ProductModel>>(
+            stream: KioskProductRepository.instance.getProductsStream(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
+                return _buildScaffoldLayout(
+                  child: const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(color: _green),
+                        SizedBox(height: 16),
+                        Text('Loading products from Firestore...'),
+                      ],
                     ),
                   ),
+                  count: 0,
+                  activePromos: activePromotions,
+                );
+              }
+
+              if (snapshot.hasError) {
+                return _buildScaffoldLayout(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline_rounded,
+                            size: 60, color: Colors.red),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Failed to load products: ${snapshot.error}',
+                          style: const TextStyle(
+                              color: Colors.red, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                  count: 0,
+                  activePromos: activePromotions,
+                );
+              }
+
+              final allProducts = snapshot.data ?? [];
+              final filteredProducts = _filterAndSortProducts(allProducts);
+
+              return _buildScaffoldLayout(
+                count: filteredProducts.length,
+                activePromos: activePromotions,
+                child: filteredProducts.isEmpty
+                    ? _buildEmpty()
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                        itemCount: filteredProducts.length,
+                        separatorBuilder: (_, __) => const Divider(
+                            height: 1, thickness: 1, color: Color(0xFFEEEEEE)),
+                        itemBuilder: (_, i) {
+                          final product = filteredProducts[i];
+                          final matchingPromo = KioskPromotionRepository.instance
+                              .getPromotionForProduct(
+                                  product, activePromotions);
+
+                          return _DealCard(
+                            product: product,
+                            promotion: matchingPromo,
+                            onAddToCart: () => _addToCart(product),
+                            onTap: () => Navigator.of(context)
+                                .push(
+                                  MaterialPageRoute(
+                                    builder: (_) => DealProductDetailPage(
+                                      product: product,
+                                      promotion: matchingPromo,
+                                    ),
+                                  ),
+                                )
+                                .then((_) => _refreshCart()),
+                          );
+                        },
+                      ),
+              );
+            },
           );
         },
       ),
     );
   }
 
-  Widget _buildScaffoldLayout({required Widget child, required int count}) {
+  Widget _buildScaffoldLayout({
+    required Widget child,
+    required int count,
+    required List<PromotionModel> activePromos,
+  }) {
     return Column(
       children: [
         _buildHeader(),
         _buildSearchBar(),
+        if (activePromos.isNotEmpty) _buildActivePromotionsRibbon(activePromos),
         _buildCountSortBar(count),
         Expanded(child: child),
       ],
@@ -195,7 +227,7 @@ class _AllDealsPageState extends State<AllDealsPage> {
   }
 
   Widget _buildHeader() {
-    final title = widget.category?.title ?? 'All Deals';
+    final title = widget.category?.title ?? 'All Deals & Promotions';
 
     return Container(
       color: _green,
@@ -212,7 +244,8 @@ class _AllDealsPageState extends State<AllDealsPage> {
               },
               child: const Padding(
                 padding: EdgeInsets.all(10),
-                child: Icon(Icons.arrow_back_rounded, color: Colors.white, size: 22),
+                child: Icon(Icons.arrow_back_rounded,
+                    color: Colors.white, size: 22),
               ),
             ),
           ),
@@ -249,7 +282,8 @@ class _AllDealsPageState extends State<AllDealsPage> {
                     right: -4,
                     top: -4,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF9A825),
                         borderRadius: BorderRadius.circular(12),
@@ -276,9 +310,9 @@ class _AllDealsPageState extends State<AllDealsPage> {
   Widget _buildSearchBar() {
     return Container(
       color: _green,
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
       child: Container(
-        height: 48,
+        height: 46,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(30),
@@ -296,9 +330,9 @@ class _AllDealsPageState extends State<AllDealsPage> {
           style: const TextStyle(fontSize: 14),
           decoration: InputDecoration(
             contentPadding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             hintText: widget.category == null
-                ? 'Search products, categories, offers...'
+                ? 'Search products, deals, discounts...'
                 : 'Search ${widget.category!.title.toLowerCase()}',
             hintStyle:
                 TextStyle(color: Colors.grey.shade400, fontSize: 14),
@@ -307,6 +341,74 @@ class _AllDealsPageState extends State<AllDealsPage> {
             border: InputBorder.none,
             isDense: true,
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActivePromotionsRibbon(List<PromotionModel> promos) {
+    return Container(
+      width: double.infinity,
+      color: const Color(0xFFE8F5E9),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            const Icon(Icons.local_offer_rounded,
+                size: 16, color: Color(0xFF1B8A3D)),
+            const SizedBox(width: 8),
+            const Text(
+              'Active Offers:',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF1B8A3D),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ...promos.map((p) {
+              return Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFA5D6A7)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      p.name,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1B8A3D),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF9A825),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        p.discountDisplay,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
         ),
       ),
     );
@@ -414,11 +516,13 @@ class _SortDropdown extends StatelessWidget {
 
 class _DealCard extends StatelessWidget {
   final ProductModel product;
+  final PromotionModel? promotion;
   final VoidCallback onAddToCart;
   final VoidCallback onTap;
 
   const _DealCard({
     required this.product,
+    this.promotion,
     required this.onAddToCart,
     required this.onTap,
   });
@@ -429,6 +533,7 @@ class _DealCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool hasWebImage = product.isWebImage;
     final bool hasAssetImage = product.isAssetImage;
+    final bool hasPromo = promotion != null;
 
     return Material(
       color: Colors.white,
@@ -439,42 +544,109 @@ class _DealCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 86,
-                height: 86,
-                decoration: BoxDecoration(
-                  color: _green.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: hasWebImage
-                      ? Image.network(
-                          product.imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(Icons.shopping_bag_rounded, size: 42, color: _green),
-                        )
-                      : hasAssetImage
-                          ? Image.asset(
+              Stack(
+                children: [
+                  Container(
+                    width: 86,
+                    height: 86,
+                    decoration: BoxDecoration(
+                      color: _green.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: hasWebImage
+                          ? Image.network(
                               product.imageUrl,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(Icons.shopping_bag_rounded, size: 42, color: _green),
+                              errorBuilder: (_, __, ___) => const Icon(
+                                  Icons.shopping_bag_rounded,
+                                  size: 42,
+                                  color: _green),
                             )
-                          : const Icon(Icons.shopping_bag_rounded, size: 42, color: _green),
-                ),
+                          : hasAssetImage
+                              ? Image.asset(
+                                  product.imageUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.shopping_bag_rounded,
+                                      size: 42,
+                                      color: _green),
+                                )
+                              : const Icon(Icons.shopping_bag_rounded,
+                                  size: 42, color: _green),
+                    ),
+                  ),
+                  if (hasPromo)
+                    Positioned(
+                      top: 4,
+                      left: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE65100),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          promotion!.discountDisplay,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      product.name,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1B1B1B),
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            product.name,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1B1B1B),
+                            ),
+                          ),
+                        ),
+                        if (hasPromo) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF3E0),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: const Color(0xFFFFB74D), width: 0.8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.local_offer,
+                                    size: 11, color: Color(0xFFE65100)),
+                                const SizedBox(width: 3),
+                                Text(
+                                  promotion!.name,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFFE65100),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Row(
@@ -489,7 +661,8 @@ class _DealCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
                             color: product.stock > 10
                                 ? const Color(0xFFE9F7ED)
@@ -497,7 +670,9 @@ class _DealCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            product.stock > 10 ? 'In stock' : 'Low stock: ${product.stock}',
+                            product.stock > 10
+                                ? 'In stock'
+                                : 'Low stock: ${product.stock}',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
@@ -511,17 +686,19 @@ class _DealCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      product.unit.isNotEmpty ? 'Unit: ${product.unit}' : 'Category: ${product.category}',
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.grey.shade500),
+                      product.unit.isNotEmpty
+                          ? 'Unit: ${product.unit}'
+                          : 'Category: ${product.category}',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey.shade500),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       product.description,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.grey.shade500),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey.shade500),
                     ),
                   ],
                 ),

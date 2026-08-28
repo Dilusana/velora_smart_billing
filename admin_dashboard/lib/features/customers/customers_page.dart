@@ -312,13 +312,14 @@ class _CustomersPageState extends ConsumerState<CustomersPage> {
         const SizedBox(width: 16),
         Expanded(
           child: DropdownButtonFormField<String>(
+            isExpanded: true,
             value: _loyaltyFilter,
             decoration: InputDecoration(
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               isDense: true,
             ),
             items: ['All', 'Bronze', 'Silver', 'Gold', 'Platinum']
-                .map((s) => DropdownMenuItem(value: s, child: Text('Tier: $s')))
+                .map((s) => DropdownMenuItem(value: s, child: Text('Tier: $s', overflow: TextOverflow.ellipsis)))
                 .toList(),
             onChanged: (val) => setState(() => _loyaltyFilter = val!),
           ),

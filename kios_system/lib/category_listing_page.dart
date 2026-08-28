@@ -8,6 +8,8 @@ import 'app_theme.dart';
 import 'product_model.dart';
 import 'product_repository.dart';
 import 'deal_product_detail_page.dart';
+import 'promotion_model.dart';
+import 'promotion_repository.dart';
 
 class CategoryListingPage extends StatefulWidget {
   final CategoryItem category;
@@ -124,61 +126,71 @@ class _CategoryListingPageState extends State<CategoryListingPage> {
                     ),
                     const SizedBox(height: 18),
                     Expanded(
-                      child: StreamBuilder<List<ProductModel>>(
-                        stream: KioskProductRepository.instance.getProductsStream(),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-                            return const Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  CircularProgressIndicator(color: AppColors.brand),
-                                  SizedBox(height: 12),
-                                  Text('Loading products...'),
-                                ],
-                              ),
-                            );
-                          }
+                      child: StreamBuilder<List<PromotionModel>>(
+                        stream: KioskPromotionRepository.instance.getPromotionsStream(),
+                        builder: (context, promoSnapshot) {
+                          final activePromos = promoSnapshot.data ?? PromotionModel.fallbackPromotions;
 
-                          if (snapshot.hasError) {
-                            return Center(
-                              child: Text(
-                                'Error loading products: ${snapshot.error}',
-                                style: const TextStyle(color: Colors.red),
-                              ),
-                            );
-                          }
-
-                          final allProducts = snapshot.data ?? [];
-                          final products = _filterProducts(allProducts);
-
-                          if (products.isEmpty) {
-                            return Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.inventory_2_outlined, size: 64, color: Colors.grey.shade400),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    'No products found in ${widget.category.title}',
-                                    style: TextStyle(fontSize: 16, color: Colors.grey.shade600, fontWeight: FontWeight.w600),
+                          return StreamBuilder<List<ProductModel>>(
+                            stream: KioskProductRepository.instance.getProductsStream(),
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+                                return const Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      CircularProgressIndicator(color: AppColors.brand),
+                                      SizedBox(height: 12),
+                                      Text('Loading products...'),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            );
-                          }
+                                );
+                              }
 
-                          return GridView.builder(
-                            padding: EdgeInsets.zero,
-                            itemCount: products.length,
-                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossAxisCount,
-                              crossAxisSpacing: 22,
-                              mainAxisSpacing: 22,
-                              childAspectRatio: 0.72,
-                            ),
-                            itemBuilder: (context, index) {
-                              return _buildProductCard(products[index]);
+                              if (snapshot.hasError) {
+                                return Center(
+                                  child: Text(
+                                    'Error loading products: ${snapshot.error}',
+                                    style: const TextStyle(color: Colors.red),
+                                  ),
+                                );
+                              }
+
+                              final allProducts = snapshot.data ?? [];
+                              final products = _filterProducts(allProducts);
+
+                              if (products.isEmpty) {
+                                return Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.inventory_2_outlined, size: 64, color: Colors.grey.shade400),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        'No products found in ${widget.category.title}',
+                                        style: TextStyle(fontSize: 16, color: Colors.grey.shade600, fontWeight: FontWeight.w600),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+
+                              return GridView.builder(
+                                padding: EdgeInsets.zero,
+                                itemCount: products.length,
+                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: crossAxisCount,
+                                  crossAxisSpacing: 22,
+                                  mainAxisSpacing: 22,
+                                  childAspectRatio: 0.72,
+                                ),
+                                itemBuilder: (context, index) {
+                                  final p = products[index];
+                                  final promo = KioskPromotionRepository.instance
+                                      .getPromotionForProduct(p, activePromos);
+                                  return _buildProductCard(p, promo);
+                                },
+                              );
                             },
                           );
                         },
@@ -304,7 +316,7 @@ class _CategoryListingPageState extends State<CategoryListingPage> {
     );
   }
 
-  Widget _buildProductCard(ProductModel product) {
+  Widget _buildProductCard(ProductModel product, [PromotionModel? promotion]) {
     const accent = AppColors.brand;
     final bool hasWebImage = product.isWebImage;
     final bool hasAssetImage = product.isAssetImage;
@@ -313,7 +325,10 @@ class _CategoryListingPageState extends State<CategoryListingPage> {
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => DealProductDetailPage(product: product),
+            builder: (_) => DealProductDetailPage(
+              product: product,
+              promotion: promotion,
+            ),
           ),
         ).then((_) => _refreshCartCount());
       },
@@ -335,19 +350,39 @@ class _CategoryListingPageState extends State<CategoryListingPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Align(
-                alignment: Alignment.topRight,
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  if (promotion != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE65100),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        promotion.discountDisplay,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    )
+                  else
+                    const SizedBox.shrink(),
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.shopping_bag_rounded, color: accent, size: 20),
                   ),
-                  child: const Icon(Icons.shopping_bag_rounded, color: accent, size: 22),
-                ),
+                ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Container(
                 height: 90,
                 decoration: BoxDecoration(

@@ -57,8 +57,17 @@ class ProductModel extends Equatable {
   final String status;
   final String imageUrl;
   final String description;
+  final DateTime? expiryDate;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  bool get isExpired {
+    if (expiryDate == null) return false;
+    final today = DateTime.now();
+    final exp = DateTime(expiryDate!.year, expiryDate!.month, expiryDate!.day);
+    final nowDay = DateTime(today.year, today.month, today.day);
+    return exp.isBefore(nowDay);
+  }
 
   const ProductModel({
     required this.id,
@@ -72,6 +81,7 @@ class ProductModel extends Equatable {
     required this.status,
     required this.imageUrl,
     required this.description,
+    this.expiryDate,
     this.createdAt,
     this.updatedAt,
   });
@@ -88,6 +98,7 @@ class ProductModel extends Equatable {
     String? status,
     String? imageUrl,
     String? description,
+    DateTime? expiryDate,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -103,6 +114,7 @@ class ProductModel extends Equatable {
       status: status ?? this.status,
       imageUrl: imageUrl ?? this.imageUrl,
       description: description ?? this.description,
+      expiryDate: expiryDate ?? this.expiryDate,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -121,6 +133,7 @@ class ProductModel extends Equatable {
       'status': status,
       'imageUrl': imageUrl,
       'description': description,
+      'expiryDate': expiryDate != null ? Timestamp.fromDate(expiryDate!) : null,
       'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : FieldValue.serverTimestamp(),
       'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : FieldValue.serverTimestamp(),
     };
@@ -139,6 +152,7 @@ class ProductModel extends Equatable {
       status: map['status'] ?? '',
       imageUrl: map['imageUrl'] ?? '',
       description: map['description'] ?? '',
+      expiryDate: _parseDateTime(map['expiryDate'] ?? map['expiry_date'] ?? map['expiry'] ?? map['expirationDate'] ?? map['expDate']),
       createdAt: map['createdAt'] != null ? _parseDateTime(map['createdAt']) : null,
       updatedAt: map['updatedAt'] != null ? _parseDateTime(map['updatedAt']) : null,
     );
@@ -146,7 +160,7 @@ class ProductModel extends Equatable {
 
   @override
   List<Object?> get props => [
-        id, name, sku, category, price, cost, stock, unit, status, imageUrl, description, createdAt, updatedAt
+        id, name, sku, category, price, cost, stock, unit, status, imageUrl, description, expiryDate, createdAt, updatedAt
       ];
 }
 
@@ -769,6 +783,8 @@ class PaymentModel extends Equatable {
   final String orderId;
   final String customerId;
   final String customerName;
+  final String supplierId;
+  final String supplierName;
   final double amount;
   final double refundAmount;
   final String paymentMethod;
@@ -776,22 +792,36 @@ class PaymentModel extends Equatable {
   final String refundStatus;
   final String processedBy;
   final DateTime paymentDate;
+  final DateTime? scheduledDate;
+  final String? chequeNumber;
+  final DateTime? chequeIssueDate;
+  final DateTime? chequeDueDate;
+  final double? chequeAmount;
+  final String? chequeStatus;
+  final String notes;
   final DateTime createdAt;
 
-  String get customer => customerName;
+  String get recipientName => supplierName.isNotEmpty
+      ? supplierName
+      : (customerName.isNotEmpty && customerName != 'Customer' ? customerName : 'General Supplier');
+  String get customer => recipientName;
   String get method => paymentMethod;
   String get status => paymentStatus;
   DateTime get date => paymentDate;
+  DateTime get issueDate => paymentDate;
+  DateTime? get scheduledPaymentDate => scheduledDate ?? chequeDueDate;
 
   PaymentModel({
     required this.id,
     this.transactionId = '',
     this.paymentId = '',
     this.invoiceNumber = '',
-    required this.orderId,
+    this.orderId = '',
     this.customerId = '',
     String customerName = '',
     String customer = '',
+    this.supplierId = '',
+    this.supplierName = '',
     required this.amount,
     this.refundAmount = 0.0,
     String paymentMethod = '',
@@ -801,10 +831,17 @@ class PaymentModel extends Equatable {
     this.refundStatus = 'Not Refunded',
     this.processedBy = '',
     DateTime? paymentDate,
+    this.scheduledDate,
+    this.chequeNumber,
+    this.chequeIssueDate,
+    this.chequeDueDate,
+    this.chequeAmount,
+    this.chequeStatus,
+    this.notes = '',
     DateTime? createdAt,
   })  : customerName = customerName.isNotEmpty ? customerName : (customer.isNotEmpty ? customer : 'Customer'),
         paymentMethod = paymentMethod.isNotEmpty ? paymentMethod : (method.isNotEmpty ? method : 'Cash'),
-        paymentStatus = paymentStatus.isNotEmpty ? paymentStatus : (status.isNotEmpty ? status : 'paid'),
+        paymentStatus = paymentStatus.isNotEmpty ? paymentStatus : (status.isNotEmpty ? status : 'Paid'),
         paymentDate = paymentDate ?? createdAt ?? DateTime.now(),
         createdAt = createdAt ?? paymentDate ?? DateTime.now();
 
@@ -817,6 +854,8 @@ class PaymentModel extends Equatable {
     String? customerId,
     String? customerName,
     String? customer,
+    String? supplierId,
+    String? supplierName,
     double? amount,
     double? refundAmount,
     String? paymentMethod,
@@ -826,6 +865,13 @@ class PaymentModel extends Equatable {
     String? refundStatus,
     String? processedBy,
     DateTime? paymentDate,
+    DateTime? scheduledDate,
+    String? chequeNumber,
+    DateTime? chequeIssueDate,
+    DateTime? chequeDueDate,
+    double? chequeAmount,
+    String? chequeStatus,
+    String? notes,
     DateTime? createdAt,
   }) {
     return PaymentModel(
@@ -836,6 +882,8 @@ class PaymentModel extends Equatable {
       orderId: orderId ?? this.orderId,
       customerId: customerId ?? this.customerId,
       customerName: customerName ?? customer ?? this.customerName,
+      supplierId: supplierId ?? this.supplierId,
+      supplierName: supplierName ?? this.supplierName,
       amount: amount ?? this.amount,
       refundAmount: refundAmount ?? this.refundAmount,
       paymentMethod: paymentMethod ?? method ?? this.paymentMethod,
@@ -843,6 +891,13 @@ class PaymentModel extends Equatable {
       refundStatus: refundStatus ?? this.refundStatus,
       processedBy: processedBy ?? this.processedBy,
       paymentDate: paymentDate ?? this.paymentDate,
+      scheduledDate: scheduledDate ?? this.scheduledDate,
+      chequeNumber: chequeNumber ?? this.chequeNumber,
+      chequeIssueDate: chequeIssueDate ?? this.chequeIssueDate,
+      chequeDueDate: chequeDueDate ?? this.chequeDueDate,
+      chequeAmount: chequeAmount ?? this.chequeAmount,
+      chequeStatus: chequeStatus ?? this.chequeStatus,
+      notes: notes ?? this.notes,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -857,6 +912,9 @@ class PaymentModel extends Equatable {
       'customerId': customerId,
       'customerName': customerName,
       'customer': customerName,
+      'supplierId': supplierId,
+      'supplierName': supplierName,
+      'supplier': supplierName,
       'amount': amount,
       'refundAmount': refundAmount,
       'paymentMethod': paymentMethod,
@@ -866,6 +924,13 @@ class PaymentModel extends Equatable {
       'refundStatus': refundStatus,
       'processedBy': processedBy,
       'paymentDate': Timestamp.fromDate(paymentDate),
+      'scheduledDate': scheduledDate != null ? Timestamp.fromDate(scheduledDate!) : null,
+      'chequeNumber': chequeNumber,
+      'chequeIssueDate': chequeIssueDate != null ? Timestamp.fromDate(chequeIssueDate!) : null,
+      'chequeDueDate': chequeDueDate != null ? Timestamp.fromDate(chequeDueDate!) : null,
+      'chequeAmount': chequeAmount,
+      'chequeStatus': chequeStatus,
+      'notes': notes,
       'createdAt': Timestamp.fromDate(createdAt),
     };
   }
@@ -883,6 +948,7 @@ class PaymentModel extends Equatable {
     final invNum = (map['invoiceNumber'] ?? '').toString();
     final oId = _parseRefOrString(map['orderId'] ?? map['order']);
     final cId = _parseRefOrString(map['customerId'] ?? map['customer']);
+    final sId = _parseRefOrString(map['supplierId'] ?? map['supplier']);
 
     final rawCustName = map['customerName'] ?? map['customer'];
     String cName = 'Customer';
@@ -893,23 +959,75 @@ class PaymentModel extends Equatable {
       cName = (parsed.isNotEmpty && !parsed.contains('DocumentReference')) ? parsed : 'Customer';
     }
 
+    final rawSupName = map['supplierName'] ?? map['supplier'];
+    String sName = '';
+    if (rawSupName is String && !rawSupName.contains('DocumentReference')) {
+      sName = rawSupName;
+    } else if (rawSupName != null) {
+      final parsed = _parseRefOrString(rawSupName);
+      sName = !parsed.contains('DocumentReference') ? parsed : '';
+    }
+
     final amt = (map['amount'] as num?)?.toDouble() ?? 0.0;
     final refAmt = (map['refundAmount'] as num?)?.toDouble() ?? 0.0;
 
-    final rawMethod = map['paymentMethod'] ?? map['method'];
+    final rawMethod = (map['paymentMethod'] ?? map['method'] ?? '').toString().trim();
     String pMethod = 'Cash';
-    if (rawMethod is String && !rawMethod.contains('DocumentReference')) {
-      pMethod = rawMethod.isEmpty ? 'Cash' : rawMethod;
-    } else if (rawMethod != null) {
-      final parsed = _parseRefOrString(rawMethod);
-      pMethod = (parsed.isNotEmpty && !parsed.contains('DocumentReference')) ? parsed : 'Cash';
+    if (rawMethod.isNotEmpty && !rawMethod.contains('DocumentReference')) {
+      final rmLower = rawMethod.toLowerCase();
+      if (rmLower.contains('card')) {
+        pMethod = 'Card Payment';
+      } else if (rmLower.contains('cheque') || rmLower.contains('check')) {
+        pMethod = 'Cheque';
+      } else if (rmLower.contains('transfer') || rmLower.contains('bank')) {
+        pMethod = 'Bank Transfer';
+      } else if (rmLower.contains('cash')) {
+        pMethod = 'Cash';
+      } else {
+        pMethod = 'Cash';
+      }
     }
 
-    final pStatus = (map['paymentStatus'] ?? map['status'] ?? 'paid').toString();
+    final rawStatus = (map['paymentStatus'] ?? map['status'] ?? 'Paid').toString().trim();
+    String pStatus = 'Paid';
+    if (rawStatus.isNotEmpty) {
+      final rsLower = rawStatus.toLowerCase();
+      if (rsLower.contains('overdue')) {
+        pStatus = 'Overdue';
+      } else if (rsLower.contains('pending')) {
+        pStatus = 'Pending Payment';
+      } else if (rsLower.contains('scheduled')) {
+        pStatus = 'Scheduled Payment';
+      } else if (rsLower.contains('paid') || rsLower.contains('complete')) {
+        pStatus = 'Paid';
+      } else {
+        pStatus = 'Paid';
+      }
+    }
     final rStatus = (map['refundStatus'] ?? 'Not Refunded').toString();
     final pBy = _parseRefOrString(map['processedBy']);
     final pDate = _parseDateTime(map['paymentDate'] ?? map['createdAt']);
     final cDate = _parseDateTime(map['createdAt'] ?? map['paymentDate']);
+
+    DateTime? schDate;
+    if (map['scheduledDate'] != null || map['scheduledPaymentDate'] != null) {
+      schDate = _parseDateTime(map['scheduledDate'] ?? map['scheduledPaymentDate']);
+    }
+
+    final chqNo = map['chequeNumber'] != null ? map['chequeNumber'].toString() : null;
+    final chqStat = map['chequeStatus'] != null ? map['chequeStatus'].toString() : null;
+    final chqAmt = (map['chequeAmount'] as num?)?.toDouble();
+
+    DateTime? chqIssue;
+    if (map['chequeIssueDate'] != null) {
+      chqIssue = _parseDateTime(map['chequeIssueDate']);
+    }
+    DateTime? chqDue;
+    if (map['chequeDueDate'] != null) {
+      chqDue = _parseDateTime(map['chequeDueDate']);
+    }
+
+    final notesVal = (map['notes'] ?? '').toString();
 
     return PaymentModel(
       id: rawId.isEmpty ? payId : rawId,
@@ -919,6 +1037,8 @@ class PaymentModel extends Equatable {
       orderId: oId,
       customerId: cId,
       customerName: cName,
+      supplierId: sId,
+      supplierName: sName,
       amount: amt,
       refundAmount: refAmt,
       paymentMethod: pMethod,
@@ -926,6 +1046,13 @@ class PaymentModel extends Equatable {
       refundStatus: rStatus,
       processedBy: pBy,
       paymentDate: pDate,
+      scheduledDate: schDate,
+      chequeNumber: chqNo,
+      chequeIssueDate: chqIssue,
+      chequeDueDate: chqDue,
+      chequeAmount: chqAmt,
+      chequeStatus: chqStat,
+      notes: notesVal,
       createdAt: cDate,
     );
   }
@@ -939,6 +1066,8 @@ class PaymentModel extends Equatable {
         orderId,
         customerId,
         customerName,
+        supplierId,
+        supplierName,
         amount,
         refundAmount,
         paymentMethod,
@@ -946,6 +1075,13 @@ class PaymentModel extends Equatable {
         refundStatus,
         processedBy,
         paymentDate,
+        scheduledDate,
+        chequeNumber,
+        chequeIssueDate,
+        chequeDueDate,
+        chequeAmount,
+        chequeStatus,
+        notes,
         createdAt,
       ];
 }
@@ -1536,12 +1672,12 @@ class StockAdjustmentModel extends Equatable {
 class PromotionModel extends Equatable {
   final String id;
   final String name;
-  final String type;
+  final String type; // 'Discount %', 'Flat Off', 'BOGO', 'Coupon'
   final double value;
-  final String scope;
+  final String scope; // 'All Products', 'Specific Category', 'Specific Products'
   final DateTime startDate;
   final DateTime endDate;
-  final String status;
+  final String status; // 'active', 'inactive', 'expired'
   final int usageCount;
   final String couponCode;
   final String description;
@@ -1549,6 +1685,7 @@ class PromotionModel extends Equatable {
   final double maximumDiscount;
   final List<String> applicableProducts;
   final List<String> applicableCategories;
+  final String imageUrl; // 16:9 Banner image hosted on Cloudinary / storage
 
   bool get isActive => status.toLowerCase() == 'active';
 
@@ -1568,6 +1705,7 @@ class PromotionModel extends Equatable {
     this.maximumDiscount = 0.0,
     this.applicableProducts = const [],
     this.applicableCategories = const [],
+    this.imageUrl = '',
   });
 
   PromotionModel copyWith({
@@ -1586,6 +1724,7 @@ class PromotionModel extends Equatable {
     double? maximumDiscount,
     List<String>? applicableProducts,
     List<String>? applicableCategories,
+    String? imageUrl,
   }) {
     return PromotionModel(
       id: id ?? this.id,
@@ -1603,6 +1742,7 @@ class PromotionModel extends Equatable {
       maximumDiscount: maximumDiscount ?? this.maximumDiscount,
       applicableProducts: applicableProducts ?? this.applicableProducts,
       applicableCategories: applicableCategories ?? this.applicableCategories,
+      imageUrl: imageUrl ?? this.imageUrl,
     );
   }
 
@@ -1625,10 +1765,14 @@ class PromotionModel extends Equatable {
       'usage': usageCount,
       'couponCode': couponCode,
       'Description': description,
+      'description': description,
       'minimumPurchaseAmount': minimumPurchaseAmount,
       'maximumDiscount': maximumDiscount,
       'Applicable_Products': applicableProducts,
       'applicable_Categories': applicableCategories,
+      'imageUrl': imageUrl,
+      'image': imageUrl,
+      'bannerUrl': imageUrl,
     };
   }
 
@@ -1676,6 +1820,7 @@ class PromotionModel extends Equatable {
       final desc = (map['Description'] ?? map['description'] ?? '').toString();
       final minPurchase = _parsePrice(map['minimumPurchaseAmount'] ?? map['minPurchase']);
       final maxDiscount = _parsePrice(map['maximumDiscount'] ?? map['maxDiscount']);
+      final img = (map['imageUrl'] ?? map['image'] ?? map['bannerUrl'] ?? map['banner'] ?? '').toString();
 
       return PromotionModel(
         id: rawId.isEmpty ? 'promo-1' : rawId,
@@ -1693,6 +1838,7 @@ class PromotionModel extends Equatable {
         maximumDiscount: maxDiscount,
         applicableProducts: appProducts,
         applicableCategories: appCategories,
+        imageUrl: img,
       );
     } catch (_) {
       return PromotionModel(
@@ -1706,6 +1852,7 @@ class PromotionModel extends Equatable {
         status: map['status']?.toString() ?? 'active',
         usageCount: 0,
         couponCode: map['Promotion ID']?.toString() ?? docId ?? '',
+        imageUrl: map['imageUrl']?.toString() ?? '',
       );
     }
   }
@@ -1727,6 +1874,7 @@ class PromotionModel extends Equatable {
         maximumDiscount,
         applicableProducts,
         applicableCategories,
+        imageUrl,
       ];
 }
 
@@ -2218,3 +2366,121 @@ class PaymentSummaryItem extends Equatable {
   @override
   List<Object?> get props => [method, total];
 }
+
+class AdminNotificationModel extends Equatable {
+  final String id;
+  final String title;
+  final String message;
+  final String targetType; // 'all' or 'specific'
+  final String targetUserId;
+  final String targetUserName;
+  final String status; // 'Pending', 'Sent', 'Failed'
+  final DateTime createdAt;
+  final DateTime? sentAt;
+  final int successCount;
+  final int failureCount;
+  final String error;
+
+  const AdminNotificationModel({
+    required this.id,
+    required this.title,
+    required this.message,
+    this.targetType = 'all',
+    this.targetUserId = '',
+    this.targetUserName = 'All Users',
+    this.status = 'Pending',
+    required this.createdAt,
+    this.sentAt,
+    this.successCount = 0,
+    this.failureCount = 0,
+    this.error = '',
+  });
+
+  AdminNotificationModel copyWith({
+    String? id,
+    String? title,
+    String? message,
+    String? targetType,
+    String? targetUserId,
+    String? targetUserName,
+    String? status,
+    DateTime? createdAt,
+    DateTime? sentAt,
+    int? successCount,
+    int? failureCount,
+    String? error,
+  }) {
+    return AdminNotificationModel(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      message: message ?? this.message,
+      targetType: targetType ?? this.targetType,
+      targetUserId: targetUserId ?? this.targetUserId,
+      targetUserName: targetUserName ?? this.targetUserName,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      sentAt: sentAt ?? this.sentAt,
+      successCount: successCount ?? this.successCount,
+      failureCount: failureCount ?? this.failureCount,
+      error: error ?? this.error,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'message': message,
+      'targetType': targetType,
+      'targetUserId': targetUserId,
+      'targetUserName': targetUserName,
+      'status': status,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'sentAt': sentAt != null ? Timestamp.fromDate(sentAt!) : null,
+      'successCount': successCount,
+      'failureCount': failureCount,
+      'error': error,
+    };
+  }
+
+  factory AdminNotificationModel.fromMap(Map<String, dynamic> map, {String? docId}) {
+    final rawId = docId ?? map['id']?.toString() ?? '';
+    DateTime parseDate(dynamic val) {
+      if (val is Timestamp) return val.toDate();
+      if (val is String) return DateTime.tryParse(val) ?? DateTime.now();
+      return DateTime.now();
+    }
+
+    return AdminNotificationModel(
+      id: rawId,
+      title: (map['title'] ?? '').toString(),
+      message: (map['message'] ?? map['body'] ?? '').toString(),
+      targetType: (map['targetType'] ?? 'all').toString(),
+      targetUserId: (map['targetUserId'] ?? '').toString(),
+      targetUserName: (map['targetUserName'] ?? (map['targetType'] == 'all' ? 'All Users' : 'Specific User')).toString(),
+      status: (map['status'] ?? 'Pending').toString(),
+      createdAt: parseDate(map['createdAt']),
+      sentAt: map['sentAt'] != null ? parseDate(map['sentAt']) : null,
+      successCount: (map['successCount'] as num?)?.toInt() ?? 0,
+      failureCount: (map['failureCount'] as num?)?.toInt() ?? 0,
+      error: (map['error'] ?? '').toString(),
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        id,
+        title,
+        message,
+        targetType,
+        targetUserId,
+        targetUserName,
+        status,
+        createdAt,
+        sentAt,
+        successCount,
+        failureCount,
+        error,
+      ];
+}
+

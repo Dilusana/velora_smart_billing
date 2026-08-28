@@ -24,13 +24,21 @@ class SaleRepository {
       final list = ordersSnap.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
         final order = OrderModel.fromMap(data, docId: doc.id);
+        final bLower = order.branch.toLowerCase();
+        final delLower = order.deliveryType.toLowerCase();
+        final isKiosk = bLower.contains('kiosk') || 
+                        bLower.contains('pos') || 
+                        bLower.contains('counter') || 
+                        delLower.contains('kiosk') || 
+                        delLower.contains('pos') || 
+                        delLower.contains('dine');
         return SaleModel(
           id: doc.id,
           orderId: order.id,
           invoiceNumber: order.id,
           customerId: order.customerId,
           customerName: order.customerName,
-          orderSource: 'Kiosk',
+          orderSource: isKiosk ? 'Kiosk' : 'App',
           orderStatus: order.status,
           paymentStatus: order.paymentStatus.isNotEmpty ? order.paymentStatus : 'paid',
           totalAmount: order.total,

@@ -7,11 +7,18 @@ import 'cart_item.dart';
 import 'my_cart_page.dart';
 import 'product_model.dart';
 
+import 'promotion_model.dart';
+
 /// Full-screen product detail page reached by tapping a product card.
 class DealProductDetailPage extends StatefulWidget {
   final ProductModel product;
+  final PromotionModel? promotion;
 
-  const DealProductDetailPage({super.key, required this.product});
+  const DealProductDetailPage({
+    super.key,
+    required this.product,
+    this.promotion,
+  });
 
   @override
   State<DealProductDetailPage> createState() => _DealProductDetailPageState();
@@ -296,6 +303,84 @@ class _DealProductDetailPageState extends State<DealProductDetailPage> {
             unitText,
             style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
           ),
+          if (widget.promotion != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFFF3E0), Color(0xFFFFECB3)],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFFFB74D), width: 1),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE65100),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.local_offer_rounded,
+                        color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              widget.promotion!.name,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFFE65100),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE65100),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                widget.promotion!.discountDisplay,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.promotion!.couponCode.isNotEmpty
+                              ? 'Use code ${widget.promotion!.couponCode} at checkout to redeem'
+                              : (widget.promotion!.description.isNotEmpty
+                                  ? widget.promotion!.description
+                                  : 'Limited time promotional offer'),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.brown.shade800,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           Container(
             padding: const EdgeInsets.all(16),
