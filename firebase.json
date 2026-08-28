@@ -1,1 +1,26 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"billingsoftware-88613","appId":"1:100129363441:android:72f6c28dc0be84ac8a2050","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"billingsoftware-88613","configurations":{"android":"1:100129363441:android:72f6c28dc0be84ac8a2050","ios":"1:100129363441:ios:5e31fd7931a090f58a2050","web":"1:100129363441:web:a90e2592b81052fc8a2050"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "billingsoftware-88613",
+          "appId": "1:100129363441:android:72f6c28dc0be84ac8a2050",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "billingsoftware-88613",
+          "configurations": {
+            "android": "1:100129363441:android:72f6c28dc0be84ac8a2050",
+            "ios": "1:100129363441:ios:5e31fd7931a090f58a2050",
+            "web": "1:100129363441:web:a90e2592b81052fc8a2050"
+          }
+        }
+      }
+    }
+  },
+  "functions": {
+    "source": "functions"
+  }
+}

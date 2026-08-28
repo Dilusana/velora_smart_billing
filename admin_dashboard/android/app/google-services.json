@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "100129363441",
+    "project_id": "billingsoftware-88613",
+    "storage_bucket": "billingsoftware-88613.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:100129363441:android:18b05d1d237fa14b8a2050",
+        "android_client_info": {
+          "package_name": "com.example.admin_dashboard"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCC3P4xq_B08KFLI8d14X_7a7H6HKWnbFU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:100129363441:android:72f6c28dc0be84ac8a2050",
+        "android_client_info": {
+          "package_name": "com.example.kios_system"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCC3P4xq_B08KFLI8d14X_7a7H6HKWnbFU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
